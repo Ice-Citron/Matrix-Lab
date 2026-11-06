@@ -89,6 +89,46 @@ def _box_json(b: dict) -> dict:
     return {k: [round(v, 4) for v in _range(b, k)] for k in ("dx", "dy", "yaw")}
 
 
+def _criteria() -> dict:
+    """Scoring thresholds for the trial popup, read from the simulator sources so they cannot drift."""
+    src = (ROOT / "sim/mj_sim.py").read_text()
+    num = lambda name: float(re.search(rf"^{name} = ([\d.]+)", src, re.M).group(1))  # noqa: E731
+    return {"peg": {"depth_mm": num("SUCCESS_DEPTH") * 1000, "lateral_mm": num("SUCCESS_LATERAL") * 1000,
+                    "force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS")),
+                    "search_mm": SEARCH_RANGE_MM},
+            "sphere": {"lift_progress": 0.3}}
+
+
+def _detail(r: pd.Series) -> dict | None:
+    """Per-trial scoring detail for the page's popup: CSV extras plus the transcript's outcome, when there is one.
+    Keys are short because the page carries one of these per trial: s seed, n decisions, w wall seconds,
+    t transcript path under results/ without .json; MuJoCo d depth mm, l lateral mm, y yaw error deg,
+    f peak force N, e error; Ditto pg final progress, st control steps, ss sim seconds, tr termination reason."""
+    d = {}
+    for k, kk in (("seed", "s"), ("n_decisions", "n"), ("t_wall", "w")):
+        v = r.get(k)
+        if v is not None and not (isinstance(v, float) and np.isnan(v)):
+            d[kk] = round(float(v), 1) if k == "t_wall" else int(v)
+    t = r.get("transcript")
+    if isinstance(t, str) and t and (ROOT / t).is_file():
+        d["t"] = t.removeprefix("results/").removesuffix(".json")
+        j = json.loads((ROOT / t).read_text())
+        o = j.get("outcome") if isinstance(j, dict) else None
+        if isinstance(o, dict):  # MuJoCo peg-in-hole: sim/mj_sim.py outcome()
+            for k, kk in (("depth_mm", "d"), ("lateral_mm", "l"), ("yaw_err_deg", "y"), ("max_force_N", "f")):
+                if o.get(k) is not None:
+                    d[kk] = round(float(o[k]), 2)
+            if o.get("error"):
+                d["e"] = str(o["error"])[:160]
+        elif isinstance(j, dict) and "oracle_success" in j:  # Ditto / ManiSkill evaluator row
+            for k, kk in (("final_progress_score", "pg"), ("steps", "st"), ("sim_time_s", "ss")):
+                if j.get(k) is not None:
+                    d[kk] = round(float(j[k]), 2)
+            if j.get("termination_reason"):
+                d["tr"] = str(j["termination_reason"])
+    return d or None
+
+
 def _policy(pol: dict, lb: dict, db: dict, feat: dict) -> dict:
     pid, sim = pol["policy"], pol.get("sim") or "mujoco"
     frames = []
@@ -117,9 +157,10 @@ def _policy(pol: dict, lb: dict, db: dict, feat: dict) -> dict:
                               "dy": round(float(r["dy"]), 3), "yaw": round(float(r["yaw"])),
                               "phase": "local" if r["_phase"] == 0 else "deployment"})
             pe = r.get("pose_error_mm")
+            # [phase, success, mode, inside local, cell ix, cell iy, clip index, pose error mm, dx, dy, yaw, detail]
             rows.append([int(r["_phase"]), int(succ[i]), mode, int(inside[i]), int(ix[i]), int(iy[i]), c,
                          round(float(pe), 2) if pd.notna(pe) else None,
-                         round(float(r["dx"]), 3), round(float(r["dy"]), 3), round(float(r["yaw"]), 1)])
+                         round(float(r["dx"]), 3), round(float(r["dy"]), 3), round(float(r["yaw"]), 1), _detail(r)])
     empty = pd.DataFrame(columns=["dx", "dy", "yaw", "success"])
     ldf = first_pass(pd.read_csv(ROOT / pol["local_csv"])) if pol.get("local_csv") else empty
     ddf = first_pass(pd.read_csv(ROOT / pol["deploy_csv"])) if pol.get("deploy_csv") else empty
@@ -170,8 +211,10 @@ def build(readme: Path | None = None) -> Path:
             pols.append(_policy(alt, dl if sim == "ditto" else lb0, dd if sim == "ditto" else db0, feat))
     # Requested for filming: full peg-in-hole runs also listed on the sphere task, clearly labelled as
     # peg-in-hole data (their own boxes, rows and clips). They are never presented as sphere-task results.
+    # rows and clips are not repeated in the JSON; the page resolves "same" to the original policy's arrays.
     for p in [p for p in pols if p["task"] == "peg" and p["status"] == "full"]:
         pols.append({**p, "id": f"{p['id']} · peg-in-hole data", "task": "sphere", "borrowed": True,
+                     "rows": [], "clips": [], "same": p["id"],
                      "note": "Peg-in-hole (MuJoCo) results shown on this task for comparison only. "
                              "Not sphere-task results.", "why": ""})
     for old in _history_rows() + PLACEHOLDERS:
@@ -184,7 +227,7 @@ def build(readme: Path | None = None) -> Path:
                      "check": None, "placeholder": old in PLACEHOLDERS})
     table = policy_table("results/policies.json", root=str(ROOT), local_box=lb0, deploy_box=db0)
     shutil.copyfile(readme or ROOT / "README.md", ASSETS / "README.md")
-    data = {"policies": pols, "bins": BINS,
+    data = {"policies": pols, "bins": BINS, "criteria": _criteria(),
             "tasks": {"peg": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(db0)},
                       "sphere": {"local": _box_json(dl), "deploy": _box_json(dd)}},
             "table": {"cols": POLICY_COLUMNS, "rows": [[str(r[c]) for c in POLICY_COLUMNS]
