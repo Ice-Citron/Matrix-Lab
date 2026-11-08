@@ -2,7 +2,7 @@
 
     python -m analysis.site        # also called by analysis.fill_docs
 
-Text comes from the rendered README.md, numbers from results/*.csv via coverage_report, the table from
+Text comes from docs/site_text.md, numbers from results/*.csv via coverage_report, the table from
 results/policies.json, clips and the failure sentence from results/featured.json and the clip's transcript.
 Assets are copied into docs/assets/, because Pages serves docs/ only.
 """
@@ -28,7 +28,7 @@ NUM_COLS = POLICY_COLUMNS[3:8]
 
 
 def _readme() -> str:
-    return (ROOT / "README.md").read_text()
+    return (DOCS / "site_text.md").read_text()
 
 
 def _section(md: str, title: str) -> str:
@@ -245,7 +245,7 @@ footer li {{ margin-bottom: 10px; }}
   <p class="eyebrow">GapHunter</p>
   <h1>{html.escape(pitch)}</h1>
   <p class="lede">{_inline(_section(md, "What GapHunter does").split(chr(10))[0])} {_inline(" ".join(_section(md, "What GapHunter does").split(chr(10))[1:]))}</p>
-  <div class="cta"><a href="{repo}">Repository →</a><a href="{repo}#how-to-reproduce">Reproduce →</a></div>
+  <div class="cta"><a href="{repo}">Repository →</a><a href="{repo}#getting-started">Reproduce →</a></div>
 </section>
 
 <section>

@@ -19,6 +19,12 @@ def deploy_box() -> dict:
     return {"dx": (-0.20, 0.20), "dy": (-0.20, 0.20), "yaw": (-90.0, 90.0)}
 
 
+def sort_deploy_box() -> dict:
+    # Bin sorting: the cube anywhere on the table the UR5e reaches, 5 cm clear of the bins (offsets from the
+    # nominal cube at (0.45, -0.05)). A cube repeats every 90 deg, so +/-45 covers every yaw.
+    return {"dx": (-0.30, 0.30), "dy": (-0.35, 0.20), "yaw": (-45.0, 45.0)}
+
+
 def sample_box(box: dict, n: int, method: str = "sobol", seed: int = 0) -> list[dict]:
     """n param dicts inside box; each gets seed = seed + i."""
     names = [k for k in PARAMS if k in box] + [k for k in box if k not in PARAMS]
