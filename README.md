@@ -1,6 +1,6 @@
 # Matrix Lab
 
-[**Website**](https://matrix-lab.io/) · [**Demo**]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html)) · [**Video**](https://www.youtube.com/watch?v=3-4TG6zC-Rk)
+[**Website**](https://matrix-lab.io/) · [**Demo**](https://ice-citron.github.io/Matrix-Lab/flow.html) · [**Video**](https://www.youtube.com/watch?v=3-4TG6zC-Rk)
 
 The goal of any robotics firm is to deploy a system with four-nines (99.99%) reliability as cheaply as possible.
 
