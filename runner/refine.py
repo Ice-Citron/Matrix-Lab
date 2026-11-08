@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from runner.batch import COLUMNS, RESULTS, _save, run_batch, summary
-from runner.sample import deploy_box, sample_box
+from runner.sample import deploy_box, sample_box, sort_deploy_box
 
 SEED_BASE = 100_000  # pass-2 seeds never collide with pass-1 seeds (0..n-1)
 
@@ -55,6 +55,7 @@ def refine_params(df: pd.DataFrame, box: dict, per_cell: int, bins=8, lo=0.10, h
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tag", default="deploy")
+    ap.add_argument("--box", choices=["deploy", "sort_deploy"], default="deploy", help="the box the tag was run on")
     ap.add_argument("--per-cell", type=int, default=10)
     ap.add_argument("--bins", type=int, default=8)
     ap.add_argument("--lo", type=float, default=0.10)
@@ -69,7 +70,8 @@ def main() -> None:
     df["pass"] = df["pass"].fillna(1).astype(int) if "pass" in df else 1
     base = df[df["pass"] == 1].reset_index(drop=True).reindex(columns=COLUMNS)  # old CSVs lack pose_error_mm
 
-    params = refine_params(base, deploy_box(), a.per_cell, a.bins, a.lo, a.hi, a.min_n)
+    box = sort_deploy_box() if a.box == "sort_deploy" else deploy_box()
+    params = refine_params(base, box, a.per_cell, a.bins, a.lo, a.hi, a.min_n)
     if not params:
         print("no cells need refinement")
         _save(base, a.tag)
