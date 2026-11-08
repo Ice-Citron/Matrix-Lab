@@ -1,17 +1,6 @@
-# Matrix lab
+# Matrix Lab
 
-**Website**: https://matrix-lab.io/
-
-**Demo:** https://ice-citron.github.io/gaphunter/flow.html
-
-**Video:** https://www.youtube.com/watch?v=3-4TG6zC-Rk
-
-![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](docs/robot.gif)
-
-[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](docs/flow.png)](https://ice-citron.github.io/gaphunter/flow.html)
-
-
-## Thesis of Matrix Lab
+[**Website**](https://matrix-lab.io/) · [**Demo**]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html)) · [**Video**](https://www.youtube.com/watch?v=3-4TG6zC-Rk)
 
 The goal of any robotics firm is to deploy a system with four-nines (99.99%) reliability as cheaply as possible.
 
@@ -25,10 +14,14 @@ I built Matrix Lab for this gap. The user uploads a policy for a defined task, a
 
 Today it supports two tasks, peg-in-hole and ball grasping, and evaluates four policies side by side: an Astra-written policy, an Opus-written policy, Astra driving the arm live, and MolmoAct2 (a VLA). Opus-live, Pi-0.5, Gemini Robotics and GR00T are wired in but not yet run (checkpoints didn't download in time). In the future, this system will be extended to more generic task categories, be hardware agnostic, support more simulators, and let users define custom tasks and scenes.
 
+![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](docs/robot.gif)
+
+[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](docs/flow.png)]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html))
+
 
 ## Getting started
 
-**To look around:** open the [demo](https://ice-citron.github.io/gaphunter/flow.html). It replays the
+**To look around:** open the [demo]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html)). It replays the
 committed runs in this repository; nothing to install.
 
 **To run it yourself** (Linux, Python 3.12; no API key needed for the peg-in-hole task, because the policies
