@@ -2,7 +2,7 @@
 
     python -m analysis.site        # also called by analysis.fill_docs
 
-Text comes from the rendered README.md, numbers from results/*.csv via coverage_report, the table from
+Text comes from docs/site_text.md, numbers from results/*.csv via coverage_report, the table from
 results/policies.json, clips and the failure sentence from results/featured.json and the clip's transcript.
 Assets are copied into docs/assets/, because Pages serves docs/ only.
 """
@@ -28,7 +28,7 @@ NUM_COLS = POLICY_COLUMNS[3:8]
 
 
 def _readme() -> str:
-    return (ROOT / "README.md").read_text()
+    return (DOCS / "site_text.md").read_text()
 
 
 def _section(md: str, title: str) -> str:

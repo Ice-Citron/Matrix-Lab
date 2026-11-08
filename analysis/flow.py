@@ -94,16 +94,23 @@ def _criteria() -> dict:
     src = (ROOT / "sim/mj_sim.py").read_text()
     num = lambda name: float(re.search(rf"^{name} = ([\d.]+)", src, re.M).group(1))  # noqa: E731
     return {"peg": {"depth_mm": num("SUCCESS_DEPTH") * 1000, "lateral_mm": num("SUCCESS_LATERAL") * 1000,
-                    "force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS")),
-                    "search_mm": SEARCH_RANGE_MM},
+                    "force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS"))},
             "sphere": {"lift_progress": 0.3}}
+
+
+# Each peg-in-hole policy's lateral search around its hole estimate, in mm.
+SEARCH_MM = {
+    "astra-script": SEARCH_RANGE_MM,  # results/policies/v1.py: 0.6 mm grid, 3 rings
+    "opus-script": 0.8,  # results/policies/opus_v1.py: 0.4 mm grid, r <= 0.8 mm
+}
 
 
 def _detail(r: pd.Series) -> dict | None:
     """Per-trial scoring detail for the page's popup: CSV extras plus the transcript's outcome, when there is one.
     Keys are short because the page carries one of these per trial: s seed, n decisions, w wall seconds,
     t transcript path under results/ without .json; MuJoCo d depth mm, l lateral mm, y yaw error deg,
-    f peak force N, e error; Ditto pg final progress, st control steps, ss sim seconds, tr termination reason."""
+    f peak force N, e error; Ditto pk peak progress, pg final progress, st control steps, ss sim seconds,
+    tr termination reason."""
     d = {}
     for k, kk in (("seed", "s"), ("n_decisions", "n"), ("t_wall", "w")):
         v = r.get(k)
@@ -121,7 +128,8 @@ def _detail(r: pd.Series) -> dict | None:
             if o.get("error"):
                 d["e"] = str(o["error"])[:160]
         elif isinstance(j, dict) and "oracle_success" in j:  # Ditto / ManiSkill evaluator row
-            for k, kk in (("final_progress_score", "pg"), ("steps", "st"), ("sim_time_s", "ss")):
+            for k, kk in (("progress_score", "pk"), ("final_progress_score", "pg"), ("steps", "st"),
+                          ("sim_time_s", "ss")):
                 if j.get(k) is not None:
                     d[kk] = round(float(j[k]), 2)
             if j.get("termination_reason"):
@@ -170,6 +178,7 @@ def _policy(pol: dict, lb: dict, db: dict, feat: dict) -> dict:
     return {"id": pid, "family": pol.get("family") or "", "author": pol.get("model") or "", "sim": sim,
             "task": TASK_OF_SIM.get(sim, sim), "note": pol.get("notes") or "", "status": pol.get("status") or "",
             "last": last, "rows": rows, "clips": clips, "why": _headline(feat) if pid == "astra-script" else "",
+            "search_mm": SEARCH_MM.get(pid),
             "box": {"local": _box_json(fold_box(lb)), "deploy": _box_json(db)},
             "check": {"local": rep["local_success"], "deploy": rep["deploy_success"],
                       "outside": rep["outside_local_success"], "n_outside": rep["n_outside"]}}
