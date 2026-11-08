@@ -21,6 +21,7 @@ import pandas as pd
 
 from analysis.coverage import (POLICY_COLUMNS, SEARCH_RANGE_MM, _range, coverage_report, default_boxes,
                                first_pass, fold_box, inside_local, load_policies, policy_table)
+from sim.ditto_trial import param_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "flow.html"
@@ -159,7 +160,11 @@ def _policy(pol: dict, lb: dict, db: dict, feat: dict) -> dict:
             fm = r.get("failure_mode")
             mode = "" if succ[i] else (str(fm) if isinstance(fm, str) and fm else "failure")
             c = -1
-            if isinstance(r.get("clip"), str) and (url := _copy(r["clip"])):
+            clip = r.get("clip") if isinstance(r.get("clip"), str) else None
+            if clip is None and sim == "mujoco":  # clip rendered after the sweep: named by param hash
+                hashed = f"results/clips/{param_hash(r)}.mp4"
+                clip = hashed if (ROOT / hashed).is_file() else None
+            if clip and (url := _copy(clip)):
                 c = len(clips)
                 clips.append({"url": url, "mode": mode or "success", "dx": round(float(r["dx"]), 3),
                               "dy": round(float(r["dy"]), 3), "yaw": round(float(r["yaw"])),
