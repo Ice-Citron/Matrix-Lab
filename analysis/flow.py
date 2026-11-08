@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "flow.html"
 ASSETS = ROOT / "docs" / "assets" / "flow"
 BINS = 16  # the ±0.05 m local box spans 4×4 cells of the ±0.20 m deployment box
-TASK_OF_SIM = {"mujoco": "peg", "ditto": "sphere"}
+TASK_OF_SIM = {"mujoco": "peg", "ditto": "sphere", "sort": "sort"}
 
 
 def _ditto_boxes() -> tuple[dict, dict]:
@@ -96,6 +96,7 @@ def _criteria() -> dict:
     num = lambda name: float(re.search(rf"^{name} = ([\d.]+)", src, re.M).group(1))  # noqa: E731
     return {"peg": {"depth_mm": num("SUCCESS_DEPTH") * 1000, "lateral_mm": num("SUCCESS_LATERAL") * 1000,
                     "force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS"))},
+            "sort": {"force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS"))},  # mj_sort_sim imports both
             "sphere": {"lift_progress": 0.3}}
 
 
@@ -110,8 +111,8 @@ def _detail(r: pd.Series) -> dict | None:
     """Per-trial scoring detail for the page's popup: CSV extras plus the transcript's outcome, when there is one.
     Keys are short because the page carries one of these per trial: s seed, n decisions, w wall seconds,
     t transcript path under results/ without .json; MuJoCo d depth mm, l lateral mm, y yaw error deg,
-    f peak force N, e error; Ditto pk peak progress, pg final progress, st control steps, ss sim seconds,
-    tr termination reason."""
+    f peak force N, e error; bin sorting c cube colour, b bin it ended in, lf lifted; Ditto pk peak progress,
+    pg final progress, st control steps, ss sim seconds, tr termination reason."""
     d = {}
     for k, kk in (("seed", "s"), ("n_decisions", "n"), ("t_wall", "w")):
         v = r.get(k)
@@ -126,6 +127,8 @@ def _detail(r: pd.Series) -> dict | None:
             for k, kk in (("depth_mm", "d"), ("lateral_mm", "l"), ("yaw_err_deg", "y"), ("max_force_N", "f")):
                 if o.get(k) is not None:
                     d[kk] = round(float(o[k]), 2)
+            if o.get("colour"):  # bin sorting: sim/mj_sort_sim.py outcome()
+                d["c"], d["b"], d["lf"] = o["colour"], o.get("bin") or "", int(bool(o.get("lifted")))
             if o.get("error"):
                 d["e"] = str(o["error"])[:160]
         elif isinstance(j, dict) and "oracle_success" in j:  # Ditto / ManiSkill evaluator row
@@ -190,8 +193,11 @@ def _policy(pol: dict, lb: dict, db: dict, feat: dict) -> dict:
 
 
 def build(readme: Path | None = None) -> Path:
+    from runner.sample import sort_deploy_box
     lb0, db0 = default_boxes()
     dl, dd = _ditto_boxes()
+    sd = sort_deploy_box()  # bin sorting reuses lb0 as its local box
+    deploy_of = {"ditto": dd, "sort": sd}
     boxes = _local_boxes()
     feat = json.loads((ROOT / "results/featured.json").read_text())
     if ASSETS.exists():
@@ -209,7 +215,7 @@ def build(readme: Path | None = None) -> Path:
     tracked = set(subprocess.run(["git", "ls-files", "results/*.csv"], cwd=ROOT, capture_output=True,
                                  text=True).stdout.split())
     for base in list(load_policies("results/policies.json", root=str(ROOT))):
-        for sim, label in (("ditto", "sphere"), ("mujoco", "peg")):
+        for sim, label in (("ditto", "sphere"), ("mujoco", "peg"), ("sort", "sorting")):
             if sim == (base.get("sim") or "mujoco"):
                 continue
             csvs = {k: f"results/{sim}_{base['policy']}_{k.split('_')[0]}.csv" for k in ("local_csv", "deploy_csv")}
@@ -219,10 +225,12 @@ def build(readme: Path | None = None) -> Path:
             short = base["policy"].split("-")[0]
             src = next((f for f in (f"results/policies/{sim}_{short}_v1.py",) if f in subprocess.run(
                 ["git", "ls-files", "results/policies"], cwd=ROOT, capture_output=True, text=True).stdout.split()), "")
-            alt = {**base, **csvs, "policy": f"{base['policy']} ({label})", "sim": sim, "status": "smoke",
+            n_deploy = len(first_pass(pd.read_csv(ROOT / csvs["deploy_csv"]))) if "deploy_csv" in csvs else 0
+            alt = {**base, **csvs, "policy": f"{base['policy']} ({label})", "sim": sim,
+                   "status": "full" if n_deploy >= 600 else "smoke",  # 600 = the full peg deploy sweep
                    "notes": f"{base.get('model')} wrote this policy once for the {label} task"
                             + (f" ({src})" if src else "") + "; it runs unchanged on every trial."}
-            pols.append(_policy(alt, dl if sim == "ditto" else lb0, dd if sim == "ditto" else db0, feat))
+            pols.append(_policy(alt, dl if sim == "ditto" else lb0, deploy_of.get(sim, db0), feat))
     # Requested for filming: full peg-in-hole runs also listed on the sphere task, clearly labelled as
     # peg-in-hole data (their own boxes, rows and clips). They are never presented as sphere-task results.
     # rows and clips are not repeated in the JSON; the page resolves "same" to the original policy's arrays.
@@ -243,7 +251,8 @@ def build(readme: Path | None = None) -> Path:
     shutil.copyfile(readme or ROOT / "README.md", ASSETS / "README.md")
     data = {"policies": pols, "bins": BINS, "criteria": _criteria(),
             "tasks": {"peg": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(db0)},
-                      "sphere": {"local": _box_json(dl), "deploy": _box_json(dd)}},
+                      "sphere": {"local": _box_json(dl), "deploy": _box_json(dd)},
+                      "sort": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(sd)}},
             "table": {"cols": POLICY_COLUMNS, "rows": [[str(r[c]) for c in POLICY_COLUMNS]
                                                          for _, r in table.iterrows()]}}
     OUT.write_text(PAGE.replace("/*DATA*/", json.dumps(data, separators=(",", ":"))))
