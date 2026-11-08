@@ -245,7 +245,7 @@ footer li {{ margin-bottom: 10px; }}
   <p class="eyebrow">GapHunter</p>
   <h1>{html.escape(pitch)}</h1>
   <p class="lede">{_inline(_section(md, "What GapHunter does").split(chr(10))[0])} {_inline(" ".join(_section(md, "What GapHunter does").split(chr(10))[1:]))}</p>
-  <div class="cta"><a href="{repo}">Repository →</a><a href="{repo}#how-to-reproduce">Reproduce →</a></div>
+  <div class="cta"><a href="{repo}">Repository →</a><a href="{repo}#getting-started">Reproduce →</a></div>
 </section>
 
 <section>
