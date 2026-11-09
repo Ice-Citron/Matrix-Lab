@@ -4,10 +4,13 @@
     python -m runner.batch --box deploy --n 100 --tag deploy --workers 4 --render-failures 4
     python -m runner.batch --tag deploy --summary          # summarise an existing CSV
     python -m runner.batch --box local --n 30 --tag local --policy astra-script   # -> results/mujoco_astra-script_local.csv
+    GAPHUNTER_SIM=sort GAPHUNTER_POLICY=sort_astra_v1 python -m runner.batch --box sort_deploy --n 600 \
+        --tag deploy --policy astra-script   # -> results/sort_astra-script_deploy.csv
 
 --policy only names the CSV (results/<sim>_<policy>_<tag>.csv, sim = $GAPHUNTER_SIM). It does not pick the
-policy: sim/mj_trial.py reads GAPHUNTER_POLICY as a policy file name (results/policies/<v>.py).
-Without --policy the CSV is results/<tag>.csv, as before (local.csv/deploy.csv are the astra-script row).
+policy: sim/mj_trial.py and sim/mj_sort_trial.py read GAPHUNTER_POLICY as a policy file name
+(results/policies/<v>.py). Without --policy the CSV is results/<tag>.csv, as before (local.csv/deploy.csv are
+the astra-script row). Bin sorting uses --box local as its local box (the same +/-5 cm, +/-15 deg cell).
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from runner.sample import deploy_box, local_box, sample_box
+from runner.sample import deploy_box, local_box, sample_box, sort_deploy_box
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
@@ -168,7 +171,7 @@ def summary(df: pd.DataFrame, tag: str = "") -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--box", choices=["local", "deploy"], default="local")
+    ap.add_argument("--box", choices=["local", "deploy", "sort_deploy"], default="local")
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--tag", default=None, help="CSV name; defaults to --box")
     ap.add_argument("--workers", type=int, default=4)
@@ -191,7 +194,7 @@ def main() -> None:
         print(summary(df, tag))
         return
 
-    box = local_box() if a.box == "local" else deploy_box()
+    box = {"local": local_box, "deploy": deploy_box, "sort_deploy": sort_deploy_box}[a.box]()
     params = sample_box(box, a.n, method=a.method, seed=a.seed)
     t0 = time.time()
     df = run_batch(params, n_workers=a.workers, render_failures=a.render_failures, tag=tag,
