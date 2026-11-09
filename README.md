@@ -1,47 +1,27 @@
-# GapHunter
+# Matrix Lab
 
-![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](docs/robot.gif)
-
-*Left: hole at the nominal placement, peg seated. Right: hole moved to dx +0.14 m, dy +0.17 m, outside the
-benchmark's box. The camera estimate is 17.5 mm off and the policy only searches ±1.8 mm, so the peg misses.*
-
-[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](docs/flow.png)](https://ice-citron.github.io/gaphunter/flow.html)
-
-**Demo:** https://ice-citron.github.io/gaphunter/flow.html
-
-**Video:** https://www.youtube.com/watch?v=3-4TG6zC-Rk
-
-## About what we built
+[**Website**](https://matrix-lab.io/) · [**Demo**](https://ice-citron.github.io/Matrix-Lab/flow.html) · [**Video**](https://www.youtube.com/watch?v=3-4TG6zC-Rk)
 
 The goal of any robotics firm is to deploy a system with four-nines (99.99%) reliability as cheaply as possible.
 
-Foundation models are closing in on the first part of that. As LLMs like Opus improve and robotic foundation
-models mature, I believe in one to two years, teams will be able to zero-shot or lightly fine-tune foundation
-models to get policies (for arbitrary tasks) that work 90% or 99% of the time. Yet, this is not enough to deploy.
+Foundation models are closing in on the first part of that. As LLMs like Opus improve and robotic foundation models mature, I believe in one to two years, teams will be able to zero-shot or lightly fine-tune foundation models to get policies (for arbitrary tasks) that work 90% or 99% of the time. Yet, this is not enough to deploy.
 
-Runs of nines. Each step up the reliability ladder, 90% to 99% to 99.9% to 99.99%, is as hard as the last.
-Capability gets you the first nine. The remaining nines come from finding every case where the policy breaks,
-and proving you have found them.
+Runs of nines. Each step up the reliability ladder, 90% to 99% to 99.9% to 99.99%, is as hard as the last. Capability gets you the first nine. The remaining nines come from finding every case where the policy breaks, and proving you have found them.
 
-Hence, I believe this is where the future gap in the market will be: not in building stronger base policies,
-but in helping others to bridge their policies from 90% to 99.99% reliability.
+Hence, I believe this is where the future gap in the market will be: not in building stronger base policies, but in helping others to bridge their policies from 90% to 99.99% reliability.
 
-We are building GapHunter for this gap. The user uploads a policy for a defined task, and GapHunter runs coverage-driven
-tests against it in simulation (MuJoCo and ManiSkill for now), sampling the full deployment workspace rather than
-the range the policy was written for, and returns the policy's operating envelope: where it works, where it
-degrades, where it fails, and why, with a transcript for every trial and clips of sample failures. It is the
-test that tells you whether a policy is actually four-nines, and whether it is acceptable for the real world,
-before a customer finds out.
+I built Matrix Lab for this gap. The user uploads a policy for a defined task, and Matrix Lab runs coverage-driven tests against it in simulation (MuJoCo and ManiSkill for now), sampling the full deployment workspace rather than the range the policy was written for, and returns the policy’s operating envelope: where it works, where it degrades, where it fails, and why, with clips and transcripts for every failure. It is the test that tells you whether a policy is actually four-nines, and whether it is acceptable for the real world, before a customer finds out.
 
-Today it supports two tasks, peg-in-hole and ball grasping, and evaluates five policies side by side: an
-Astra-written policy, an Opus-written policy, Astra driving the arm live, Opus driving the arm live, and
-MolmoAct2 (a VLA). Pi-0.5 is configured but not yet run (its checkpoint didn't download in time), and Gemini
-Robotics and GR00T are placeholders. In the future, this system will be extended to more generic task
-categories, be hardware agnostic, support more simulators, and let users define custom tasks and scenes.
+Today it supports two tasks, peg-in-hole and ball grasping, and evaluates four policies side by side: an Astra-written policy, an Opus-written policy, Astra driving the arm live, and MolmoAct2 (a VLA). Opus-live, Pi-0.5, Gemini Robotics and GR00T are wired in but not yet run (checkpoints didn't download in time). In the future, this system will be extended to more generic task categories, be hardware agnostic, support more simulators, and let users define custom tasks and scenes.
+
+![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](docs/robot.gif)
+
+[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](docs/flow.png)]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html))
+
 
 ## Getting started
 
-**To look around:** open the [demo](https://ice-citron.github.io/gaphunter/flow.html). It replays the
+**To look around:** open the [demo]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html)). It replays the
 committed runs in this repository; nothing to install.
 
 **To run it yourself** (Linux, Python 3.12; no API key needed for the peg-in-hole task, because the policies
