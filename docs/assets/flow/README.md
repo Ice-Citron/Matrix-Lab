@@ -1,6 +1,8 @@
 # Matrix Lab
 
-[**Website**](https://matrix-lab.io/) · [**Demo**](https://ice-citron.github.io/Matrix-Lab/flow.html) · [**Video**](https://www.youtube.com/watch?v=3-4TG6zC-Rk)
+[**Website**](https://matrix-lab.io/) 
+[**Demo**](https://ice-citron.github.io/Matrix-Lab/flow.html) 
+[**Video**](https://www.youtube.com/watch?v=3-4TG6zC-Rk)
 
 The goal of any robotics firm is to deploy a system with four-nines (99.99%) reliability as cheaply as possible.
 
@@ -8,9 +10,9 @@ Foundation models are closing in on the first part of that. As LLMs like Opus im
 
 Runs of nines. Each step up the reliability ladder, 90% to 99% to 99.9% to 99.99%, is as hard as the last. Capability gets you the first nine. The remaining nines come from finding every case where the policy breaks, and proving you have found them.
 
-Hence, I believe this is where the future gap in the market will be: not in building stronger base policies, but in helping others to bridge their policies from 90% to 99.99% reliability.
+Hence, we believe this is where the future gap in the market will be: not in building stronger base policies, but in helping others to bridge their policies from 90% to 99.99% reliability.
 
-I built Matrix Lab for this gap. The user uploads a policy for a defined task, and Matrix Lab runs coverage-driven tests against it in simulation (MuJoCo and ManiSkill for now), sampling the full deployment workspace rather than the range the policy was written for, and returns the policy’s operating envelope: where it works, where it degrades, where it fails, and why, with clips and transcripts for every failure. It is the test that tells you whether a policy is actually four-nines, and whether it is acceptable for the real world, before a customer finds out.
+We are building Matrix Lab for this gap. The user uploads a policy for a defined task, and Matrix Lab runs coverage-driven tests against it in simulation (MuJoCo and ManiSkill for now), sampling the full deployment workspace rather than the range the policy was written for, and returns the policy’s operating envelope: where it works, where it degrades, where it fails, and why, with clips and transcripts for every failure. It is the test that tells you whether a policy is actually four-nines, and whether it is acceptable for the real world, before a customer finds out.
 
 Today it supports two tasks, peg-in-hole and ball grasping, and evaluates four policies side by side: an Astra-written policy, an Opus-written policy, Astra driving the arm live, and MolmoAct2 (a VLA). Opus-live, Pi-0.5, Gemini Robotics and GR00T are wired in but not yet run (checkpoints didn't download in time). In the future, this system will be extended to more generic task categories, be hardware agnostic, support more simulators, and let users define custom tasks and scenes.
 
