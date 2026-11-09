@@ -139,6 +139,22 @@ svg.hm { width: 100%; height: auto; display: block; }
 .mapbar .key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); vertical-align: -1px; margin-right: 3px; }
 .mapbar .key i.ok { background: var(--ok); }
 .mapnote { font-variant-numeric: tabular-nums; min-height: 18px; margin-top: 4px; }
+/* Success-probability field: shaded cells under the dots, contour lines over them, hatched where data is thin. */
+.map .field rect, .map .cont path, .map .local2 { pointer-events: none; }
+.map .local2 { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.map .cont path { fill: none; stroke: var(--ink); vector-effect: non-scaling-stroke; stroke-linecap: round; }
+.map .cont .c50 { stroke-width: 1.8; }
+.map .cont .c90 { stroke-width: 1.8; stroke-dasharray: 0 3.2; }
+.fieldbar { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 12px; flex-wrap: wrap; }
+.fieldbar label { display: inline-flex; align-items: center; gap: 6px; }
+.fieldbar select { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink); }
+.fieldbar input[type=range] { width: 110px; accent-color: var(--ink); }
+.fieldbar .kv { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 54px; }
+.fieldnums { font-variant-numeric: tabular-nums; margin-top: 6px; }
+.about { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.about summary { cursor: pointer; color: var(--ink); }
+.about p { margin: 6px 0; line-height: 1.5; }
+.about b { color: var(--ink); font-weight: 600; }
 .big { max-width: 640px; margin: 0 0 24px; }
 .modal { position: fixed; inset: 0; background: rgba(17, 17, 17, .45); display: flex; align-items: center; justify-content: center;
          z-index: 20; padding: 16px; }
@@ -282,7 +298,8 @@ const TASKS = [
 ];
 const SIMS = [["mujoco", "MuJoCo"], ["ditto", "ManiSkill"], ["isaac", "Isaac Sim"], ["genesis", "Genesis"],
               ["pybullet", "PyBullet"], ["gazebo", "Gazebo"], ["custom", "Custom simulator"]];
-const S = {step: 0, reached: 0, task: "peg", sel: new Set(), nl: 30, nd: 600, timer: null, play: null, map: "split", maps: {}};
+const S = {step: 0, reached: 0, task: "peg", sel: new Set(), nl: 30, nd: 600, timer: null, play: null, map: "split", maps: {},
+           field: {model: "kernel", knobs: {kernel: 20, knn: 15, binned: 16}}};
 const $ = id => document.getElementById(id);
 // All text from the data passes through esc(); markup is then parsed in the target element's context.
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
@@ -400,6 +417,160 @@ function stats(rows) {
   }
   return s;
 }
+// ---- Success-probability field. ----
+// Every trial is one draw from a coin whose bias depends on the placement. The field estimates that bias,
+// P(success | dx, dy), over the deployment box from the trials we have. Each estimator takes pts = [{x, y, s}]
+// (metres, s = 0/1) and returns {p(x, y), band(x, y), support(x, y), note}: the estimate, a 95% interval
+// [lo, hi] (or null), how much data is behind the estimate at that point (false = draw hatched), and model
+// numbers for the About block. A fit on a subset is the same call on fewer points, which is what the
+// cross-validation uses, so every estimator is scored the same way.
+const Z95 = 1.959964;
+function wilson(k, n) {
+  if (!(n > 0)) return null;
+  const z = Z95, p = k / n, d = 1 + z * z / n, c = p + z * z / (2 * n), m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n));
+  return [Math.max(0, (c - m) / d), Math.min(1, (c + m) / d)];
+}
+const sigm = t => 1 / (1 + Math.exp(-t)), logit = p => Math.log(p / (1 - p));
+function fitKernel(pts, h) {
+  const h2 = 2 * h * h;
+  const at = (x, y) => { let sw = 0, swy = 0, sw2 = 0;
+    for (const q of pts) { const w = Math.exp(-((q.x - x) ** 2 + (q.y - y) ** 2) / h2); sw += w; swy += w * q.s; sw2 += w * w; }
+    return sw > 1e-12 ? {p: swy / sw, mass: sw, neff: sw * sw / sw2} : {p: NaN, mass: 0, neff: 0}; };
+  return {p: (x, y) => at(x, y).p, support: (x, y) => at(x, y).mass >= 1.5,
+    band: (x, y) => { const a = at(x, y); return a.mass >= 1.5 ? wilson(a.p * a.neff, a.neff) : null; },
+    behind: (x, y) => at(x, y).neff, note: () => `bandwidth h = ${(h * 100).toFixed(1)} cm`};
+}
+function fitKnn(pts, k, area) {
+  k = Math.min(k, pts.length);
+  const rUniform = Math.sqrt(k * area / (Math.PI * pts.length));  // radius that would hold k trials if they were spread evenly
+  const at = (x, y) => { const d = pts.map(q => [(q.x - x) ** 2 + (q.y - y) ** 2, q.s]).sort((a, b) => a[0] - b[0]);
+    let s = 0; for (let i = 0; i < k; i++) s += d[i][1]; return {p: s / k, rk: Math.sqrt(d[k - 1][0])}; };
+  return {p: (x, y) => at(x, y).p, support: (x, y) => at(x, y).rk <= 2 * rUniform, band: (x, y) => wilson(at(x, y).p * k, k),
+    behind: () => k, note: () => `k = ${k}. Hatched where the k nearest trials are spread more than twice as widely as average (${(2 * rUniform * 100).toFixed(1)} cm)`};
+}
+function fitBinned(pts, bins, box) {
+  const [X, Y] = box, cw = (X[1] - X[0]) / bins, ch = (Y[1] - Y[0]) / bins, cells = new Map();
+  const key = (x, y) => Math.min(bins - 1, Math.max(0, Math.floor((x - X[0]) / cw))) + "," + Math.min(bins - 1, Math.max(0, Math.floor((y - Y[0]) / ch)));
+  for (const q of pts) { const c = cells.get(key(q.x, q.y)) || [0, 0]; c[0]++; c[1] += q.s; cells.set(key(q.x, q.y), c); }
+  const at = (x, y) => cells.get(key(x, y)) || [0, 0];
+  return {p: (x, y) => { const c = at(x, y); return c[0] ? c[1] / c[0] : NaN; }, support: (x, y) => at(x, y)[0] >= 1,
+    band: (x, y) => { const c = at(x, y); return c[0] ? wilson(c[1], c[0]) : null; }, behind: (x, y) => at(x, y)[0],
+    note: () => `${bins} × ${bins} cells of ${(cw * 100).toFixed(1)} × ${(ch * 100).toFixed(1)} cm`};
+}
+// Logistic regression by iteratively reweighted least squares, with a tiny ridge so separated data stays finite.
+function irls(F, y, ridge = 1e-3) {
+  const m = F[0].length; let b = new Array(m).fill(0), H;
+  for (let it = 0; it < 40; it++) {
+    H = Array.from({length: m}, () => new Array(m).fill(0)); const g = new Array(m).fill(0);
+    for (let i = 0; i < F.length; i++) { const f = F[i], p = sigm(f.reduce((a, v, j) => a + v * b[j], 0)), w = p * (1 - p);
+      for (let j = 0; j < m; j++) { g[j] += f[j] * (y[i] - p); for (let l = 0; l < m; l++) H[j][l] += w * f[j] * f[l]; } }
+    for (let j = 0; j < m; j++) { H[j][j] += ridge; g[j] -= ridge * b[j]; }
+    const d = solve(H, g); if (!d) break; b = b.map((v, j) => v + d[j]);
+    if (Math.max(...d.map(Math.abs)) < 1e-9) break;
+  }
+  return {b, cov: inverse(H)};
+}
+function solve(A, b) {  // Gaussian elimination with partial pivoting; returns null if singular
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) { let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-14) return null; [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; } }
+  return M.map((r, i) => r[n] / r[i]);
+}
+function inverse(A) { const n = A.length; return Array.from({length: n}, (_, j) => solve(A, A.map((_, i) => +(i === j)))).map((col, j) => col || new Array(n).fill(NaN))
+  .reduce((inv, col, j) => (col.forEach((v, i) => (inv[i][j] = v)), inv), Array.from({length: n}, () => new Array(n).fill(0))); }
+const SC = 0.1;  // feature scale: 10 cm, so coefficients are per 10 cm and the Hessian is well conditioned
+function fitLogistic(pts, quad) {
+  const feat = quad ? (x, y) => [1, x / SC, y / SC, (x / SC) ** 2, (x / SC) * (y / SC), (y / SC) ** 2] : (x, y) => [1, Math.hypot(x, y) / SC];
+  const {b, cov} = irls(pts.map(q => feat(q.x, q.y)), pts.map(q => q.s));
+  const eta = f => f.reduce((a, v, j) => a + v * b[j], 0), se = f => Math.sqrt(Math.max(0, f.reduce((a, v, j) => a + v * f.reduce((c, u, l) => c + u * cov[j][l], 0), 0)));
+  const fit = {p: (x, y) => sigm(eta(feat(x, y))), support: () => true, behind: () => pts.length,
+    band: (x, y) => { const f = feat(x, y), e = eta(f), s = se(f); return [sigm(e - Z95 * s), sigm(e + Z95 * s)]; }};
+  fit.note = () => {
+    if (quad) return `logit p = ${b.map((v, j) => `${j ? (v >= 0 ? " + " : " − ") : ""}${Math.abs(v).toFixed(2)}${["", " x", " y", " x²", " xy", " y²"][j]}`).join("")} (x, y in 10 cm units)`;
+    const r50 = -b[0] / b[1] * SC, g = [-1 / b[1], b[0] / b[1] ** 2], v = g.reduce((a, u, j) => a + u * g.reduce((c, w, l) => c + w * cov[j][l], 0), 0), s = Math.sqrt(Math.max(0, v)) * SC;
+    const r90 = (logit(0.9) - b[0]) / b[1] * SC;
+    return `logit p = ${b[0].toFixed(2)} ${b[1] >= 0 ? "+" : "−"} ${Math.abs(b[1]).toFixed(2)} r (r in 10 cm units)` +
+      (b[1] < 0 ? `. Even odds at r50 = ${(r50 * 100).toFixed(1)} cm (95%: ${((r50 - Z95 * s) * 100).toFixed(1)} to ${((r50 + Z95 * s) * 100).toFixed(1)} cm). 90% line at r = ${(r90 * 100).toFixed(1)} cm` : ". Success does not fall with distance in this fit");
+  };
+  return fit;
+}
+const FIELD = {
+  none: {name: "None"},
+  kernel: {name: "Kernel smoother", knob: {label: "bandwidth", min: 5, max: 60, def: 20, fmt: v => `${(v / 10).toFixed(1)} cm`}, fit: (pts, v, g) => fitKernel(pts, v / 1000)},
+  knn: {name: "k nearest trials", knob: {label: "k", min: 3, max: 60, def: 15, fmt: v => `${v}`}, fit: (pts, v, g) => fitKnn(pts, v, g.area)},
+  binned: {name: "Binned", knob: {label: "bins per side", min: 4, max: 24, def: 16, fmt: v => `${v} × ${v}`}, fit: (pts, v, g) => fitBinned(pts, v, g.box)},
+  logit_r: {name: "Logistic, radial", min: 25, fit: pts => fitLogistic(pts, false)},
+  logit_q: {name: "Logistic, quadratic", min: 25, fit: pts => fitLogistic(pts, true)},
+};
+const FIELD_MIN = 8;  // fewer trials than this and no field is drawn at all
+// 10-fold cross-validated Brier score: each fold is predicted from a fit on the other nine. Folds are a fixed
+// shuffle so the number is the same on every redraw. Returns [score, trials scored].
+function cvBrier(fitter, pts, K = 10) {
+  let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const idx = pts.map((_, i) => i); for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  let se = 0, n = 0;
+  for (let f = 0; f < K; f++) {
+    const test = idx.filter((_, j) => j % K === f), train = idx.filter((_, j) => j % K !== f);
+    if (!train.length || !test.length) continue;
+    const m = fitter(train.map(i => pts[i]));
+    for (const i of test) { const p = m.p(pts[i].x, pts[i].y); if (Number.isFinite(p)) { se += (p - pts[i].s) ** 2; n++; } }
+  }
+  return [n ? se / n : NaN, n];
+}
+// Marching squares over a G × G grid of values at cell centres; returns an SVG path of the level-t curve.
+// Cells touching an undefined value are skipped, so contours stop at the edge of the data.
+function contourPath(grid, G, t, gx, gy) {
+  const L = (a, b, va, vb) => a + (t - va) / (vb - va) * (b - a); let d = "";
+  for (let j = 0; j < G - 1; j++) for (let i = 0; i < G - 1; i++) {
+    const v = [grid[j * G + i], grid[j * G + i + 1], grid[(j + 1) * G + i + 1], grid[(j + 1) * G + i]];
+    if (!v.every(Number.isFinite)) continue;
+    const c = (v[0] >= t) | (v[1] >= t) << 1 | (v[2] >= t) << 2 | (v[3] >= t) << 3; if (!c || c === 15) continue;
+    const x0 = gx(i), x1 = gx(i + 1), y0 = gy(j), y1 = gy(j + 1);
+    const E = {t: [L(x0, x1, v[0], v[1]), y0], r: [x1, L(y0, y1, v[1], v[2])], b: [L(x0, x1, v[3], v[2]), y1], l: [x0, L(y0, y1, v[0], v[3])]};
+    const mid = (v[0] + v[1] + v[2] + v[3]) / 4 >= t;
+    const segs = {1: "lt", 2: "tr", 3: "lr", 4: "rb", 6: "tb", 7: "lb", 8: "bl", 9: "tb", 11: "rb", 12: "rl", 13: "tr", 14: "lt",
+                  5: mid ? "tr bl" : "lt rb", 10: mid ? "lt rb" : "tr bl"}[c];
+    for (const s of segs.split(" ")) d += `M${E[s[0]][0].toFixed(2)} ${E[s[0]][1].toFixed(2)}L${E[s[1]][0].toFixed(2)} ${E[s[1]][1].toFixed(2)}`;
+  }
+  return d;
+}
+const ABOUT = {
+  intro: `<p>Every trial is one draw from a coin whose bias depends on where the part was placed. We see the outcome, never the bias.
+    The field is an estimate of that bias, P(success | dx, dy), at every point of the deployment box, including placements no trial
+    landed on. Green shading means the estimate is above 50%, red below, stronger the further from 50%. The solid line is where the
+    estimate crosses 50%, the dotted line 90%. Hatched cells have too little data behind them for this estimator to say anything.</p>
+    <p>Each estimator makes a different assumption about how success varies between the trials we have. Switch between them:
+    where they agree, the data is speaking; where they disagree, the assumption is.</p>`,
+  kernel: `<p><b>Kernel smoother</b> (Nadaraya-Watson). Every trial votes on every point, with weight exp(−d²/2h²) that falls off with
+    the distance d; the estimate is the weighted share of successes. The bandwidth h is the only knob: a small h follows the data
+    closely and gets noisy, a large h is smooth and blurs sharp edges, so a real cliff looks like a gentle slope and the 50% line
+    moves. The effective number of trials behind a point is (Σw)²/Σw² and the interval is a Wilson interval on that count; cells
+    with less than one and a half trials' worth of weight are hatched.</p>`,
+  knn: `<p><b>k nearest trials.</b> The estimate at a point is the success rate among the k trials closest to it. Like the kernel,
+    but the neighbourhood adapts: narrow where trials are dense, wide where they are sparse. It always finds k neighbours, so far
+    from any data it is a guess; cells whose k neighbours are spread more than twice as widely as average are hatched. The
+    interval is a Wilson interval on k.</p>`,
+  binned: `<p><b>Binned.</b> The box is cut into a grid; inside each cell the estimate is successes divided by trials in that cell.
+    It assumes nothing about neighbouring cells and so cannot borrow strength from them: a cell with three trials gives a
+    three-trial answer and an empty cell gives none (hatched). The interval is a Wilson interval on the cell's count. Coarser bins
+    trade resolution for steadier estimates. This is what the old heatmap showed.</p>`,
+  logit_r: `<p><b>Logistic, radial.</b> Assumes success depends only on the distance r from the nominal placement (0, 0), through a
+    logistic curve logit p = a + b r. Two numbers, fitted by maximum likelihood (iteratively reweighted least squares). Because it
+    assumes so much it is very sample-efficient and gives a clean r50, the distance at which the odds are even, with a confidence
+    interval from the delta method. If the assumption is wrong, say the failure region is off-centre or lopsided, it is confidently
+    wrong: compare its cross-validated Brier score with the kernel's. The interval is on the fitted curve (inverse Fisher
+    information) and does not widen where data is thin the way the local estimators do; nothing is hatched because the model
+    extrapolates everywhere.</p>`,
+  logit_q: `<p><b>Logistic, quadratic.</b> logit p is a quadratic in (dx, dy): six parameters, so the 50% line is an ellipse that can
+    sit off-centre and stretch along one axis. It still assumes a single smooth bump with no holes. Fitted and scored like the
+    radial model.</p>`,
+  scores: `<p><b>Cross-validated Brier score.</b> Mean squared difference between the predicted probability and the 0/1 outcome,
+    measured on trials the model did not see: the trials are split into ten folds and each fold is predicted from a fit on the
+    other nine. 0 is perfect, 0.25 is a coin flip, and the baseline is predicting the overall success rate everywhere. Lower is
+    better, and the comparison is fair across estimators. <b>Envelope</b>: the share of the deployment box where the estimate is
+    above 50% and above 90%, counted on the drawing grid; "tested" is the share that is not hatched.</p>`,
+};
 // ---- Trial map: one marker per trial at its true (dx, dy), green = success, red = failure. ----
 // The SVG keeps a square viewBox over the map; panning and zooming move that viewBox, so markers added during a
 // replay land in the same coordinate frame and the view is never reset. Marker size shrinks as you zoom in.
@@ -419,14 +590,69 @@ function mapInit(el, ps) {
       title="Show or hide ${esc(p.id)}">${glyph(j)}${esc(p.id)}</button>`).join("")}</span>` : "")
     + `<span class="key"><i class="ok"></i>success</span><span class="key"><i></i>failure</span><span class="key">dashed: local box</span><span class="key">line through a dot: yaw, when zoomed</span>`;
   el.classList.add("map");
+  const uid = "h" + Math.random().toString(36).slice(2, 8), single = ps.length === 1;
   put(el, `<svg viewBox="0 0 ${W} ${W}" role="img" aria-label="Trial placements over the deployment box, green = success, red = failure">
-      ${boxes.map(b => rect(b.deploy, "deploy")).join("")}${boxes.map(b => rect(b.local, "local")).join("")}<g class="dots"></g></svg>
-    <div class="mapbar">${keys}<span class="sp"></span><span class="zb">
+      <defs><pattern id="${uid}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" stroke="#b5b5b5" stroke-width=".7"/></pattern></defs>
+      ${boxes.map(b => rect(b.deploy, "deploy")).join("")}${boxes.map(b => rect(b.local, "local")).join("")}
+      <g class="field" shape-rendering="crispEdges"></g>${boxes.map(b => rect(b.local, "local2")).join("")}<g class="cont"></g><g class="dots"></g></svg>
+    <div class="mapbar">${keys}${single ? `<span class="fkey hidden"><span class="key">solid line: 50%</span><span class="key">dotted line: 90%</span><span class="key">hatched: too little data</span></span>` : ""}<span class="sp"></span><span class="zb">
       <button data-z="in" title="Zoom in" aria-label="Zoom in">+</button><button data-z="out" title="Zoom out" aria-label="Zoom out">−</button>
       <button data-z="reset" title="Reset view" aria-label="Reset view">Reset</button></span></div>
-    <p class="note mapnote"></p>`);
+    <p class="note mapnote"></p>
+    ${single ? `<div class="fieldbar"><label>Field <select class="fsel">${Object.entries(FIELD).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join("")}</select></label>
+      <label class="fknob"><span class="fkl"></span><input type="range"><span class="kv"></span></label></div>
+    <p class="note fieldnums"></p>
+    <details class="about"><summary>How this estimate works</summary><div class="abody"></div></details>` : `<p class="note">Switch to one map per policy to see the success-probability field.</p>`}`);
   const svg = el.querySelector("svg"), dots = svg.querySelector(".dots"), note = el.querySelector(".mapnote");
   const HINT = "Drag to pan. Scroll or pinch to zoom. Click a dot to open its trial.";
+  // ---- field: estimate P(success) over the deployment box from the trials on this map ----
+  const pts = [], G = 56, fieldG = svg.querySelector(".field"), contG = svg.querySelector(".cont");
+  const FX = X, FY = Y, area = (FX[1] - FX[0]) * (FY[1] - FY[0]), geo = {box: [FX, FY], area};
+  const gcx = i => FX[0] + (i + .5) * (FX[1] - FX[0]) / G, gcy = j => FY[1] - (j + .5) * (FY[1] - FY[0]) / G;  // grid cell centres in metres (row 0 = top)
+  let fit = null, cells = null, timer = null;
+  const model = () => single ? S.field.model : "none";
+  const refresh = (full) => {
+    clearTimeout(timer); timer = null;
+    const m = model(), spec = FIELD[m], nums = el.querySelector(".fieldnums"), about = el.querySelector(".abody");
+    fieldG.replaceChildren(); contG.replaceChildren(); fit = null; cells = null;
+    if (!single) return;
+    el.querySelector(".fkey").classList.toggle("hidden", m === "none");
+    const knob = el.querySelector(".fknob"); knob.classList.toggle("hidden", !spec.knob);
+    if (spec.knob) { const k = S.field.knobs[m], inp = knob.querySelector("input"); knob.querySelector(".fkl").textContent = spec.knob.label;
+      inp.min = spec.knob.min; inp.max = spec.knob.max; inp.value = k; knob.querySelector(".kv").textContent = spec.knob.fmt(k); }
+    el.querySelector(".fsel").value = m;
+    if (m === "none") { nums.textContent = ""; put(about, ABOUT.intro); return; }
+    const need = Math.max(FIELD_MIN, spec.min || 0);
+    if (pts.length < need) { nums.textContent = `${pts.length} trials so far. This estimate needs at least ${need}.`; put(about, ABOUT.intro + ABOUT[m]); return; }
+    const ks = pts.reduce((a, q) => a + q.s, 0);
+    if (ks === 0 || ks === pts.length) { nums.textContent = `All ${pts.length} trials ${ks ? "succeeded" : "failed"}: the field is flat at ${ks ? 100 : 0}% wherever there is data, and there is nothing for a model to separate.`; put(about, ABOUT.intro + ABOUT[m]); return; }
+    fit = spec.fit(pts, S.field.knobs[m], geo);
+    const grid = new Float64Array(G * G), cw = (FX[1] - FX[0]) / G, ch = (FY[1] - FY[0]) / G; let tested = 0, a50 = 0, a90 = 0;
+    cells = [];
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+      const x = gcx(i), y = gcy(j), ok = fit.support(x, y), p = ok ? fit.p(x, y) : NaN; grid[j * G + i] = p;
+      if (ok && Number.isFinite(p)) { tested++; if (p >= .5) a50++; if (p >= .9) a90++; }
+      const fill = !ok || !Number.isFinite(p) ? `url(#${uid})` : p >= .5 ? `rgba(26,154,76,${((p - .5) * .64).toFixed(3)})` : `rgba(217,52,43,${((.5 - p) * .64).toFixed(3)})`;
+      cells.push(`<rect x="${sx(x - cw / 2).toFixed(2)}" y="${sy(y + ch / 2).toFixed(2)}" width="${(cw * u).toFixed(3)}" height="${(ch * u).toFixed(3)}" fill="${fill}"/>`);
+    }
+    fieldG.innerHTML = cells.join("");
+    contG.innerHTML = `<path class="c50" d="${contourPath(grid, G, .5, i => sx(gcx(i)), j => sy(gcy(j)))}"/><path class="c90" d="${contourPath(grid, G, .9, i => sx(gcx(i)), j => sy(gcy(j)))}"/>`;
+    const pc = v => `${Math.round(100 * v / (G * G))}%`;
+    let txt = `${pts.length} trials. Tested ${pc(tested)} of the box, above 50% in ${pc(a50)}, above 90% in ${pc(a90)}.`;
+    if (full) {
+      const [b, n] = cvBrier(sub => spec.fit(sub, S.field.knobs[m], geo), pts), pbar = pts.reduce((a, q) => a + q.s, 0) / pts.length;
+      txt += ` 10-fold Brier score ${Number.isFinite(b) ? b.toFixed(3) : "n/a"} on ${n} trials (baseline ${(pbar * (1 - pbar)).toFixed(3)}).`;
+    } else txt += " Scores appear when the replay ends.";
+    nums.textContent = txt;
+    put(about, ABOUT.intro + ABOUT[m] + `<p class="note">This fit: ${fit.note()}.</p>` + ABOUT.scores);
+  };
+  const schedule = () => { if (!timer) timer = setTimeout(() => refresh(false), 400); };
+  if (single) {
+    el.querySelector(".fsel").onchange = e => { S.field.model = e.target.value; refresh(true); };
+    const inp = el.querySelector(".fknob input");
+    inp.oninput = () => { S.field.knobs[model()] = +inp.value; el.querySelector(".fknob .kv").textContent = FIELD[model()].knob.fmt(+inp.value); schedule(); };
+    inp.onchange = () => refresh(true);
+  }
   const v = {x: 0, y: 0, w: W};
   const apply = () => {
     const k = W / v.w, s = (MARK / Math.sqrt(k)).toFixed(3);
@@ -446,7 +672,14 @@ function mapInit(el, ps) {
     moved = 0; hit = e.target.closest("g.m"); svg.classList.add("drag");
   };
   svg.onpointermove = e => {
-    if (!ptrs.has(e.pointerId)) { const [mx, my] = pt(e.clientX, e.clientY); note.textContent = `dx ${ix(mx).toFixed(3)} m, dy ${iy(my).toFixed(3)} m`; return; }
+    if (!ptrs.has(e.pointerId)) {
+      const [mx, my] = pt(e.clientX, e.clientY), x = ix(mx), y = iy(my); let t = `dx ${x.toFixed(3)} m, dy ${y.toFixed(3)} m.`;
+      if (fit && x >= FX[0] && x <= FX[1] && y >= FY[0] && y <= FY[1]) {
+        const p = fit.p(x, y), b = fit.band(x, y), n = fit.behind(x, y);
+        t += fit.support(x, y) && Number.isFinite(p) ? ` P(success) ${Math.round(100 * p)}%${b ? ` (${Math.round(100 * b[0])} to ${Math.round(100 * b[1])}%)` : ""}, ${Number.isFinite(n) ? n.toFixed(n < 10 ? 1 : 0) : "?"} trials behind it.` : " Too little data here.";
+      }
+      note.textContent = t; return;
+    }
     const r = svg.getBoundingClientRect(), f = v.w / r.width, [lx, ly] = ptrs.get(e.pointerId);
     ptrs.set(e.pointerId, [e.clientX, e.clientY]);
     if (ptrs.size === 1) { v.x -= (e.clientX - lx) * f; v.y -= (e.clientY - ly) * f; moved += Math.hypot(e.clientX - lx, e.clientY - ly); clamp(); apply(); }
@@ -482,8 +715,10 @@ function mapInit(el, ps) {
     dots.append(frag(dots, `<g class="m${cls}" data-p="${esc(p.id)}" data-i="${i}" data-x="${x}" data-y="${y}" transform="translate(${x} ${y}) scale(${s})">
       <title>${esc(p.id)}: ${r[1] ? "success" : esc(r[2])}, dx ${r[8]} m, dy ${r[9]} m, yaw ${r[10]}°</title>
       <g transform="${nudge}"><path d="${SHAPES[ps.length > 1 ? j % SHAPES.length : 0]}"/><line x1="0" y1="0" x2="${(2.2 * Math.cos(a)).toFixed(2)}" y2="${(2.2 * Math.sin(a)).toFixed(2)}"/></g></g>`));
+    if (r[2] !== "api_error") { pts.push({x: r[8], y: r[9], s: r[1]}); schedule(); }  // api_error trials are left out of the rates, so out of the field too
   };
-  return {add};
+  refresh(true);
+  return {add, refresh};
 }
 // Build the map(s) for the current step: one per policy, or one shared map with a shape per policy.
 // states = [{p, rows, i}]: rows is the replay list, i how many of them have been played.
@@ -499,6 +734,7 @@ function buildMaps(states) {
     if (ov) el.replaceChildren();
   }
   for (const st of states) st.rows.slice(0, st.i).forEach(r => S.maps[st.p.id].add(st.p, r, st.p.rows.indexOf(r)));
+  new Set(Object.values(S.maps)).forEach(m => m.refresh(true));
 }
 function setMap(mode) {
   S.map = mode;
@@ -538,7 +774,7 @@ function run() {
     }
   };
   S.play.forEach(draw);
-  const done = () => { stop(); $("after").classList.remove("hidden"); $("run-sub").textContent = `Done: ${total} committed trials replayed.`; };
+  const done = () => { stop(); $("after").classList.remove("hidden"); $("run-sub").textContent = `Done: ${total} committed trials replayed.`; new Set(Object.values(S.maps)).forEach(m => m.refresh(true)); };
   S.timer = setInterval(() => {
     let busy = false;
     for (const st of S.play) { if (st.i >= st.rows.length) continue; busy = true; emit(st, st.rows[st.i++]); draw(st); }
