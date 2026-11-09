@@ -235,7 +235,7 @@ def build(readme: Path | None = None) -> Path:
     # peg-in-hole data (their own boxes, rows and clips). They are never presented as sphere-task results.
     # rows and clips are not repeated in the JSON; the page resolves "same" to the original policy's arrays.
     for p in [p for p in pols if p["task"] == "peg" and p["status"] == "full"]:
-        pols.append({**p, "id": f"{p['id']} · peg-in-hole data", "task": "sphere", "borrowed": True,
+        pols.append({**p, "id": f"{p['id']} (peg-in-hole data)", "task": "sphere", "borrowed": True,
                      "rows": [], "clips": [], "same": p["id"],
                      "note": "Peg-in-hole (MuJoCo) results shown on this task for comparison only. "
                              "Not sphere-task results.", "why": ""})
