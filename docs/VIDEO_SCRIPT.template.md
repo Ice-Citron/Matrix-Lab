@@ -1,4 +1,6 @@
-# Video script: 60 s screen recording, Shi Hao speaks
+# Video script (for screen recordings)
+
+to put in gitignore 
 
 Generated from `docs/VIDEO_SCRIPT.template.md` by `python -m analysis.fill_docs`. Read it aloud once
 with a timer. It must be under 65 s.
@@ -13,8 +15,8 @@ Before recording: `streamlit run app/streamlit_app.py`, browser at least 1280 px
 | 38–52 s | "Inside the box, {local_success}. Outside, {outside_success}. Here's the failure, and here's what Astra thought it was doing." | Point at the numbers. Play the failure clip. Open **What Astra was thinking**. |
 | 52–60 s | "Four-nines reliability is the job. You can't get there on a benchmark that stops here." | Hover the dashed rectangle. Cut. |
 
-Numbers on screen for reference: benchmark covers {coverage} of the deployment domain · deployment
-success {deploy_success} (n={n_deploy}) · local n={n_local} · outside n={n_outside}.
+Numbers on screen for reference: benchmark covers {coverage} of the deployment domain, deployment
+success {deploy_success} (n={n_deploy}), local n={n_local}, outside n={n_outside}.
 
 ## Re-run during recording
 
