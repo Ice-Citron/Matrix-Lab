@@ -6,6 +6,11 @@ controlled point. The hole is a 21 x 21 mm square, 50 mm deep, cut into the top 
 """
 from __future__ import annotations
 
+#rucha's code review!
+#purpose: this file is pretty simple, it just has a few functions that are used by the policy to run the peg in hole simulation. 
+# The functions are used by the policy to control the robot and get information about the environ its in
+
+
 _SIM = None  # set by the trial runner
 
 

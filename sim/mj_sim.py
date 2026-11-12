@@ -18,6 +18,12 @@ from pathlib import Path
 
 import numpy as np
 
+#rucha's code review!
+#purpose: this file sets upa mujoco peg in hole simulkation and uses the ur5e robot from the menagerie. 
+#dependencies (files): used by  mj_trial.py, improve_policy.py, write_policy.py
+#todos: none at the moment
+#'invariants': (things that cannot change with this like nwith the objectives): 
+
 os.environ.setdefault("MUJOCO_GL", "egl")
 import mujoco  # noqa: E402
 
