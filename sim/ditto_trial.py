@@ -20,6 +20,15 @@ import sys
 import time
 from pathlib import Path
 
+#code review by rucha
+#purpose: this file runs the ditto trial and then rewrites the results as a json
+#file
+# It also writes the clip as a series of frames and then writes the trial results to a json file. It also has a function that runs the ditto trial in a subprocess and
+#todos: none at the moment
+#dependencies: sim.mj_sim, sim.trial, ditto.integration.agentic, agentic_framework.harness.policy, agentic_framework.models.llm.backend, inspect_robots.errors, scripts.eval, scripts.workspace 
+#(actually i will get rid of dependencies since its kind of useless)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 LRC = Path(os.environ.get("GAPHUNTER_LRC", ROOT / "llms-for-robot-control")).resolve()
 AGENT_JSON = ROOT / "sim" / os.environ.get("GAPHUNTER_DITTO_CONFIG", "agent.json")  # or molmoact2_ditto.json / pi05_ditto.json
