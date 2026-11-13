@@ -28,6 +28,10 @@ import pandas as pd
 
 from runner.sample import deploy_box, local_box, sample_box, sort_deploy_box
 
+#rucha's code review
+#purpose of this is to set the root path of the project and define the path for saving results.
+# iy defines the columns for the results df and a constant for how often to save intermediate results during batch processing
+
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 # Spec columns, then pose_error_mm (TrialResult extra, MuJoCo only) and pass (1 = batch, 2 = runner.refine).

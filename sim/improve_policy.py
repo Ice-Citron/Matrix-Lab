@@ -38,12 +38,12 @@ N_CELLS = 8
 LAST_CALLS = 6
 
 
-def worst_cells(df: pd.DataFrame) -> list[pd.Series]:
-    """One failed trial per cell for the N_CELLS cells with the most failures (largest pose error picked)."""
+def worst_cells(df: pd.DataFrame, n_cells: int = N_CELLS, cell_m: float = CELL_M) -> list[pd.Series]:
+    """One failed trial per cell for the n_cells cells with the most failures (largest pose error picked)."""
     rows = df[df["pass"] == 1].copy()
-    rows["cell"] = list(zip((rows["dx"] // CELL_M).astype(int), (rows["dy"] // CELL_M).astype(int)))
+    rows["cell"] = list(zip((rows["dx"] // cell_m).astype(int), (rows["dy"] // cell_m).astype(int)))
     fails = rows[~rows["success"]]
-    cells = fails.groupby("cell").size().sort_values(ascending=False).index[:N_CELLS]
+    cells = fails.groupby("cell").size().sort_values(ascending=False).index[:n_cells]
     return [fails[fails["cell"] == c].sort_values("pose_error_mm").iloc[-1] for c in cells]
 
 
@@ -64,17 +64,33 @@ def summarise(row: pd.Series) -> str:
     return "\n".join(lines)
 
 
-def build_prompt(code: str, df: pd.DataFrame, summaries: list[str]) -> str:
+def failure_table(df: pd.DataFrame) -> str:
+    """One line per failed pass-1 trial: true pose, camera estimate, end state, calls used."""
+    lines = ["true_x true_y true_yaw | est_x est_y est_yaw | end_lateral_mm calls"]
+    for r in df[(df["pass"] == 1) & ~df["success"]].itertuples():
+        t = json.loads((ROOT / r.transcript).read_text())
+        est = next(s["result"] for s in t["steps"] if s["api"] == "hole_pose")
+        tx, ty = NOMINAL_HOLE + (r.dx, r.dy)
+        lines.append(f"{tx:.3f} {ty:.3f} {r.yaw:.1f} | {est[0][0]:.3f} {est[0][1]:.3f} {est[1]:.1f} | "
+                     f"{t['outcome']['lateral_mm']:.1f} {t['outcome']['api_calls']}")
+    return "\n".join(lines)
+
+
+def build_prompt(code: str, df: pd.DataFrame, summaries: list[str], all_failures: bool = False) -> str:
     from sim import api
     done = df[df["pass"] == 1]
     rate = 100 * done["success"].mean()
-    return (TASK.replace("{api_source}", inspect.getsource(api))
-            + "\n\nThis is the current policy module:\n\n```python\n" + code + "```\n\n"
-            + f"This policy was tested at {len(done)} placements across x = 0.45 +/- 0.20 m, y = +/- 0.20 m, "
-            f"yaw +/- 90 degrees. It succeeded in {rate:.0f}% of trials. "
-            "Here are the worst failure regions and what happened in each:\n\n" + "\n".join(summaries)
-            + "\n\nRewrite the module so it succeeds in these regions too, keeping the same API and the "
-            "300-call budget. Return the complete module.")
+    prompt = (TASK.replace("{api_source}", inspect.getsource(api))
+              + "\n\nThis is the current policy module:\n\n```python\n" + code + "```\n\n"
+              + f"This policy was tested at {len(done)} placements across x = 0.45 +/- 0.20 m, y = +/- 0.20 m, "
+              f"yaw +/- 90 degrees. It succeeded in {rate:.0f}% of trials. "
+              "Here are the worst failure regions and what happened in each:\n\n" + "\n".join(summaries))
+    if all_failures:
+        prompt += (f"\n\nHere is every one of the {int((~done['success']).sum())} failed trials, one per line "
+                   "(metres and degrees; end_lateral_mm is how far the peg ended from the hole centre):\n\n"
+                   + failure_table(df))
+    return prompt + ("\n\nRewrite the module so it succeeds in these regions too, keeping the same API and the "
+                     "300-call budget. Return the complete module.")
 
 
 def main() -> None:
@@ -82,11 +98,14 @@ def main() -> None:
     ap.add_argument("src", help="policy version the sweep was run with, e.g. v1")
     ap.add_argument("dst", help="version to write, e.g. v2")
     ap.add_argument("--sweep", default="results/deploy.csv")
+    ap.add_argument("--cells", type=int, default=N_CELLS, help="failure cells shown to the model")
+    ap.add_argument("--cell-m", type=float, default=CELL_M, help="cell size in metres")
+    ap.add_argument("--all-failures", action="store_true", help="append every failed trial as a table")
     a = ap.parse_args()
     policies = ROOT / "results" / "policies"
     code = (policies / f"{a.src}.py").read_text()
     df = pd.read_csv(ROOT / a.sweep)
-    prompt = build_prompt(code, df, [summarise(r) for r in worst_cells(df)])
+    prompt = build_prompt(code, df, [summarise(r) for r in worst_cells(df, a.cells, a.cell_m)], a.all_failures)
     ask = ask_opus if MODEL.startswith("claude") else ask_astra
     text, meta = ask(prompt)
     match = re.search(r"```python\n(.*?)```", text, re.S)
