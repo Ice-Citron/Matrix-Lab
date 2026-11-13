@@ -1,5 +1,5 @@
 """run_trial: one GapHunter episode.
-GAPHUNTER_SIM = fake (default) | mujoco (peg-in-hole fallback) | sort (MuJoCo bin sorting) | ditto."""
+GAPHUNTER_SIM = fake (default) | mujoco (peg-in-hole fallback) | sort (MuJoCo bin sorting) | ditto | isaac."""
 from __future__ import annotations
 
 import os
@@ -29,6 +29,9 @@ def run_trial(params: dict, render: bool = False) -> TrialResult:
     if backend == "ditto":
         from sim.ditto_trial import run_ditto_trial
         return run_ditto_trial(params, render=render)
+    if backend == "isaac":
+        from sim.isaac_so101 import run_isaac_trial
+        return TrialResult(**run_isaac_trial(params, render=render))
     from runner.fake import fake_run_trial  # lazy: runner.fake imports TrialResult from here
     return fake_run_trial(params, render=render)
 
