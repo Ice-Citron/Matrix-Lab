@@ -85,3 +85,8 @@ pose_error_mm 17.5 / 8.5 / 13.8 / 3.0). Single failure mode stands (user, 13:15)
 2026-11-13 19:30 `cp results/deploy_v{2,3,4}_fresh.csv results/mujoco_astra-script-v{2,3,4}_deploy.csv` (plain copies of the existing 600-placement deploy sweeps; originals kept) -> deploy 46.0% / 46.8% / 69.8%
 2026-11-13 19:33 `.venv/bin/python -m runner.policies` -> rows astra-script-v2/v3/v4 added after fable-script; all "full"
 2026-11-13 19:35 `.venv/bin/python -m analysis.improve_figure` -> results/improve_v1_v4.png; deploy v1 15.5% v2 46.0% v3 46.8% v4 69.8%; local 90% / 100% / 100% / 100%; deploy median n_decisions 226 / 246 / 253 / 158.5, median t_wall 0.35 / 0.32 / 0.36 / 0.18 s
+
+## Isaac SO-101 Astra live trials, nominal placement (isaac-adapter agent, 2026-11-13)
+2026-11-13 20:45 `GAPHUNTER_SIM=isaac .venv/bin/python -c "from sim.trial import run_trial; print(run_trial({'dx':0,'dy':0,'yaw':0,'seed':0}, render=True))"` -> success False, failure_mode drop (grasp flag on Orange002 and Orange001, nothing placed), n_decisions 25, t_wall 209 s, clip results/clips/isaac-so101-b8d5c1ac421725758b8a285483132db2f2f4fd07.mp4
+2026-11-13 20:49 same command with seed 1 -> success False, failure_mode drop (grasp flag on Orange001 twice, oranges scattered), n_decisions 25, t_wall 231 s, clip results/clips/isaac-so101-8fbd6b97b30b4b1c0f309cbf78e9aaf753d4d403.mp4
+2026-11-13 20:54 same command with seed 2 -> success False, failure_mode drop, n_decisions 25, t_wall 222 s, clip results/clips/isaac-so101-78045b8180fecc2d20d6bdb21230841f29413a1b.mp4
