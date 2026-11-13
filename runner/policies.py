@@ -45,6 +45,10 @@ POLICIES = [
     {"policy": "opus-live", "family": "LLM closed-loop control", "model": "claude-opus-5-5",
      "task": DITTO_TASK, "sim": "ditto", "local_box": DITTO_LOCAL_BOX,
      "notes": "Opus drives the arm live, one decision per step, same harness and caps as astra-live."},
+    {"policy": "fable-script", "family": "LLM-written policy code", "model": "claude-fable-5-2",
+     "task": "peg-in-hole, UR5e", "sim": "mujoco", "local_box": local_box(),
+     "notes": "Fable 5.2 writes policy.py once (results/policies/fable_v1.py) from the same prompt and API "
+              "docstrings as Astra; code unedited."},
     {"policy": "molmoact2", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK, "sim": "ditto",
      "local_box": DITTO_LOCAL_BOX, "notes": "Native MolmoAct2-DROID checkpoint, 15 Hz, 450 steps."},
 ]

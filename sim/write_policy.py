@@ -97,14 +97,14 @@ def ask_opus(prompt: str) -> tuple[str, dict]:
     """Same single-shot call on the Anthropic Messages API (raw HTTP: the SDK is not a project dependency).
     Effort medium matches Astra's reasoning effort; no server-side fallback, so the named model wrote the policy."""
     key = _env().get("ANTHROPIC_API_KEY") or os.environ["ANTHROPIC_API_KEY"]
-    body = {"model": MODEL, "max_tokens": 16000, "thinking": {"type": "adaptive"},
+    body = {"model": MODEL, "max_tokens": 64000, "thinking": {"type": "adaptive"},
             "output_config": {"effort": "medium"}, "messages": [{"role": "user", "content": prompt}]}
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
                                  headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                                           "content-type": "application/json"})
     for attempt in range(3):  # retry 2x with backoff
         try:
-            with urllib.request.urlopen(req, timeout=600) as resp:
+            with urllib.request.urlopen(req, timeout=1800) as resp:
                 data = json.loads(resp.read())
             break
         except Exception as exc:  # noqa: BLE001
