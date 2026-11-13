@@ -49,6 +49,18 @@ POLICIES = [
      "task": "peg-in-hole, UR5e", "sim": "mujoco", "local_box": local_box(),
      "notes": "Fable 5.2 writes policy.py once (results/policies/fable_v1.py) from the same prompt and API "
               "docstrings as Astra; code unedited."},
+    {"policy": "astra-script-v2", "family": "LLM-written policy code", "model": "gpt-6-astra",
+     "task": "peg-in-hole, UR5e", "sim": "mujoco", "local_box": local_box(),
+     "notes": "Rewritten by Astra from v1's deploy failures via sim/improve_policy.py (8 cells); "
+              "no human edits."},
+    {"policy": "astra-script-v3", "family": "LLM-written policy code", "model": "gpt-6-astra",
+     "task": "peg-in-hole, UR5e", "sim": "mujoco", "local_box": local_box(),
+     "notes": "Rewritten by Astra from v2's deploy failures via sim/improve_policy.py (32 cells); "
+              "no human edits."},
+    {"policy": "astra-script-v4", "family": "LLM-written policy code", "model": "gpt-6-astra",
+     "task": "peg-in-hole, UR5e", "sim": "mujoco", "local_box": local_box(),
+     "notes": "Rewritten by Astra from v3's deploy failures via sim/improve_policy.py (32 cells + all "
+              "failures); no human edits."},
     {"policy": "molmoact2", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK, "sim": "ditto",
      "local_box": DITTO_LOCAL_BOX, "notes": "Native MolmoAct2-DROID checkpoint, 15 Hz, 450 steps."},
 ]

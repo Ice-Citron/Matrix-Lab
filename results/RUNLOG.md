@@ -77,3 +77,11 @@ failure modes   miss=146
 ```
 deploy.csv = 810 rows (600 pass 1 + 210 pass 2). Failure clips: rows 0, 1, 3, 4 (all miss;
 pose_error_mm 17.5 / 8.5 / 13.8 / 3.0). Single failure mode stands (user, 13:15). Wall time for all three: 43 s.
+
+## Improve loop v2-v4 local sweeps and figure (mujoco-loop agent, 2026-11-13)
+2026-11-13 19:30 `GAPHUNTER_SIM=mujoco GAPHUNTER_POLICY=v2 .venv/bin/python -m runner.batch --box local --n 60 --tag local --policy astra-script-v2 --seed 6100000 --workers 8` -> results/mujoco_astra-script-v2_local.csv, 60/60 (100.0%), mean decisions 62
+2026-11-13 19:30 `GAPHUNTER_SIM=mujoco GAPHUNTER_POLICY=v3 .venv/bin/python -m runner.batch --box local --n 60 --tag local --policy astra-script-v3 --seed 6200000 --workers 8` -> results/mujoco_astra-script-v3_local.csv, 60/60 (100.0%), mean decisions 65
+2026-11-13 19:30 `GAPHUNTER_SIM=mujoco GAPHUNTER_POLICY=v4 .venv/bin/python -m runner.batch --box local --n 60 --tag local --policy astra-script-v4 --seed 6300000 --workers 8` -> results/mujoco_astra-script-v4_local.csv, 60/60 (100.0%), mean decisions 102
+2026-11-13 19:30 `cp results/deploy_v{2,3,4}_fresh.csv results/mujoco_astra-script-v{2,3,4}_deploy.csv` (plain copies of the existing 600-placement deploy sweeps; originals kept) -> deploy 46.0% / 46.8% / 69.8%
+2026-11-13 19:33 `.venv/bin/python -m runner.policies` -> rows astra-script-v2/v3/v4 added after fable-script; all "full"
+2026-11-13 19:35 `.venv/bin/python -m analysis.improve_figure` -> results/improve_v1_v4.png; deploy v1 15.5% v2 46.0% v3 46.8% v4 69.8%; local 90% / 100% / 100% / 100%; deploy median n_decisions 226 / 246 / 253 / 158.5, median t_wall 0.35 / 0.32 / 0.36 / 0.18 s
