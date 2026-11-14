@@ -3,7 +3,7 @@
 Units: metres and degrees in the world frame; z is up and the table top is z = 0.
 The robot has a suction cup pointing straight down. The centre of its 28 x 28 mm square pad is the controlled
 point. One 40 mm cube lies on the table; its colour is red, green or blue. Three round bowls stand on the table:
-cream, grey and black. Each bowl is a round dish 120 mm across inside, with 60 mm high walls. The red cube
+cream, grey and black. Each bowl is a round dish 120 mm across inside, with 40 mm high walls. The red cube
 belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl. The trial
 succeeds when the cube rests inside its own bowl with the suction off.
 """

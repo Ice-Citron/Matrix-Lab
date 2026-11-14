@@ -60,7 +60,7 @@ explaining the strategy."""
 BOWL_TASK = """You are writing the control policy for a cube-in-bowl cell.
 
 A UR5e arm has a suction cup pointing straight down. One 40 mm cube lies on the table; it is red, green or blue.
-Three round bowls stand on the table: cream, grey and black; each is a dish 120 mm across inside, with walls 60 mm high.
+Three round bowls stand on the table: cream, grey and black; each is a dish 120 mm across inside, with walls 40 mm high.
 In our test cell the cube is placed at x = 0.45 +/- 0.05 m, y = -0.05 +/- 0.05 m, yaw = 0 +/- 15 degrees.
 The bowls are fixed at cream (0.25, 0.30), grey (0.45, 0.30) and black (0.65, 0.30).
 The red cube belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl.

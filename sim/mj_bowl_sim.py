@@ -2,7 +2,7 @@
 
 Same UR5e, suction cup, cube colours and placement box as sim.mj_sort_sim. The three bowls are the
 3D-printed ones of the real SO-101 cell: cream, grey and black, each a round dish of BOWL_INNER_R
-inner radius with BOWL_HEIGHT walls, standing where the bins stood. The cube's colour decides the
+inner radius (120 mm across) with 40 mm walls, standing where the bins stood. The cube's colour decides the
 bowl: red -> cream, green -> grey, blue -> black. Success: the cube rests inside its bowl, suction off.
 """
 from __future__ import annotations
@@ -11,15 +11,15 @@ import math
 
 import numpy as np
 
-from sim.mj_sort_sim import (BIN_HEIGHT, COLOURS, NOMINAL_BINS, SortSim, bin_offset, build_model, mujoco)
+from sim.mj_sort_sim import COLOURS, NOMINAL_BINS, SortSim, bin_offset, build_model, mujoco
 
 BOWLS = ("cream", "grey", "black")
 CUBE_TO_BOWL = dict(zip(COLOURS, BOWLS))  # red -> cream, green -> grey, blue -> black
 BOWL_RGBA = {"cream": "0.93 0.89 0.78 1", "grey": "0.55 0.55 0.57 1", "black": "0.12 0.12 0.12 1"}
 NOMINAL_BOWLS = dict(zip(BOWLS, (NOMINAL_BINS[c] for c in COLOURS)))  # same three spots as the bins
-BOWL_INNER_R = 0.060   # 120 mm inner diameter (assumed; set from the print when measured)
+BOWL_INNER_R = 0.060   # 120 mm inner diameter, measured on the printed bowls
 BOWL_WALL = 0.005
-BOWL_HEIGHT = BIN_HEIGHT  # 60 mm rim, like the bins
+BOWL_HEIGHT = 0.040      # 40 mm walls, measured on the printed bowls
 WALL_SEGMENTS = 16
 
 

@@ -16,25 +16,33 @@
     "ephemeral_5m_input_tokens": 0,
     "ephemeral_1h_input_tokens": 0
    },
-   "output_tokens": 3810,
+   "output_tokens": 2969,
    "output_tokens_details": {
-    "thinking_tokens": 1945
+    "thinking_tokens": 1605
    },
    "service_tier": "standard",
    "inference_geo": "global",
    "speed": "standard"
   },
-  "prompt": "You are writing the control policy for a cube-in-bowl cell.\n\nA UR5e arm has a suction cup pointing straight down. One 40 mm cube lies on the table; it is red, green or blue.\nThree round bowls stand on the table: cream, grey and black; each is a dish 120 mm across inside, with walls 60 mm high.\nIn our test cell the cube is placed at x = 0.45 +/- 0.05 m, y = -0.05 +/- 0.05 m, yaw = 0 +/- 15 degrees.\nThe bowls are fixed at cream (0.25, 0.30), grey (0.45, 0.30) and black (0.65, 0.30).\nThe red cube belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl.\nThe trial succeeds when the cube rests inside its own bowl with the suction off.\n\nWrite a Python module that defines `def run(api):`. It is called once per trial and must return when\nfinished. `api` is the module below; use only these five functions (plus `math`, which you may import).\nYou have at most 300 API calls per trial. Contact force on the pad above 150 N aborts the trial as a collision.\n\n```python\n\"\"\"The five functions a cube-in-bowl policy may call. A policy is `def run(api): ...` and receives this module.\n\nUnits: metres and degrees in the world frame; z is up and the table top is z = 0.\nThe robot has a suction cup pointing straight down. The centre of its 28 x 28 mm square pad is the controlled\npoint. One 40 mm cube lies on the table; its colour is red, green or blue. Three round bowls stand on the table:\ncream, grey and black. Each bowl is a round dish 120 mm across inside, with 60 mm high walls. The red cube\nbelongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl. The trial\nsucceeds when the cube rests inside its own bowl with the suction off.\n\"\"\"\nfrom __future__ import annotations\n\n_SIM = None  # set by the trial runner\n\n\ndef cube_pose():\n    \"\"\"Camera estimate of the cube: returns ((x, y, z_top_face), yaw_deg, colour).\n    Yaw is the rotation of the cube about z, reported in [-45, 45) because a square repeats every 90 degrees.\n    colour is \"red\", \"green\" or \"blue\".\"\"\"\n    return _SIM.cube_pose()\n\n\ndef bowl_pose(bowl):\n    \"\"\"Camera estimate of the bowl (\"cream\", \"grey\" or \"black\"): returns ((x, y, z_rim), yaw_deg).\n    (x, y) is the centre of the bowl floor; z_rim is the height of the top of its wall.\"\"\"\n    return _SIM.bowl_pose(bowl)\n\n\ndef move_to(xyz, yaw_deg):\n    \"\"\"Move the pad centre to xyz (metres) with the pad rotated yaw_deg about z, cup pointing down.\n    Joint-space motion; blocks until the arm has settled. A held cube moves with the cup.\n    The run is aborted as a collision if the contact force on the pad ever exceeds 150 N.\"\"\"\n    return _SIM.move_to(xyz, yaw_deg)\n\n\ndef suction(on):\n    \"\"\"Switch the vacuum on (True) or off (False), then wait for things to settle.\n    The pad grips only what it touches. Returns True if the cup now holds the cube, else False.\n    Switching off releases the cube, which drops from where it is.\"\"\"\n    return _SIM.suction(on)\n\n\ndef done():\n    \"\"\"True if the cube rests inside the bowl that matches its colour (each bowl has a load cell).\"\"\"\n    return _SIM.done()\n\n```\n\nReply with the complete module in a single ```python code block, followed by at most three sentences\nexplaining the strategy.",
-  "response": "```python\nimport math\n\nCUBE = 0.040\nBOWL_FOR = {\"red\": \"cream\", \"green\": \"grey\", \"blue\": \"black\"}\nMAX_CALLS = 300\n\n\nclass _Budget(Exception):\n    pass\n\n\nclass _Ctl:\n    def __init__(self, api):\n        self.api = api\n        self.calls = 0\n        self.pos = None  # last commanded pad position\n\n    def _tick(self):\n        if self.calls >= MAX_CALLS - 1:\n            raise _Budget()\n        self.calls += 1\n\n    def cube(self, n=3):\n        xs = ys = zs = s = c = 0.0\n        votes = {}\n        for _ in range(n):\n            self._tick()\n            (x, y, z), yaw, col = self.api.cube_pose()\n            xs += x; ys += y; zs += z\n            s += math.sin(math.radians(4.0 * yaw))\n            c += math.cos(math.radians(4.0 * yaw))\n            votes[col] = votes.get(col, 0) + 1\n        yaw = math.degrees(math.atan2(s, c)) / 4.0\n        col = max(votes, key=votes.get)\n        return (xs / n, ys / n, zs / n), yaw, col\n\n    def bowl(self, name, n=2):\n        xs = ys = zs = 0.0\n        for _ in range(n):\n            self._tick()\n            (x, y, z), _ = self.api.bowl_pose(name)\n            xs += x; ys += y; zs += z\n        return xs / n, ys / n, zs / n\n\n    def move(self, xyz, yaw, step=0.10):\n        \"\"\"Move in short, roughly straight segments (joint-space moves bow otherwise).\"\"\"\n        tgt = (float(xyz[0]), float(xyz[1]), float(xyz[2]))\n        if self.pos is None:\n            self._tick()\n            self.api.move_to(tgt, yaw)\n            self.pos = tgt\n            return\n        p = self.pos\n        d = math.sqrt(sum((tgt[i] - p[i]) ** 2 for i in range(3)))\n        n = max(1, int(math.ceil(d / step)))\n        for k in range(1, n + 1):\n            t = k / float(n)\n            q = tuple(p[i] + (tgt[i] - p[i]) * t for i in range(3))\n            self._tick()\n            self.api.move_to(q, yaw)\n            self.pos = q\n\n    def suction(self, on):\n        self._tick()\n        return bool(self.api.suction(on))\n\n    def done(self):\n        self._tick()\n        return bool(self.api.done())\n\n\ndef _attempt(c, bowls, travel_z):\n    (cx, cy, cz), yaw, col = c.cube()\n    bx, by, brim = bowls[BOWL_FOR.get(col, \"grey\")]\n\n    # rise straight up first (if we know where we are), then go above the cube\n    if c.pos is not None and c.pos[2] < travel_z - 1e-4:\n        c.move((c.pos[0], c.pos[1], travel_z), yaw, step=0.05)\n    c.move((cx, cy, travel_z), yaw, step=0.12)\n    c.move((cx, cy, cz + 0.030), yaw, step=0.05)\n    c.move((cx, cy, cz + 0.010), yaw, step=0.02)\n\n    # gentle touch-down: creep onto the top face until the vacuum seals\n    held = False\n    for dz in (0.004, 0.002, 0.001, 0.0, -0.001, -0.002):\n        c.move((cx, cy, cz + dz), yaw, step=0.02)\n        if c.suction(True):\n            held = True\n            break\n    if not held:\n        c.suction(False)\n        c.move((cx, cy, travel_z), yaw, step=0.05)\n        return False\n\n    # lift vertically, carry high over the rims, lower into the bowl, release\n    c.move((cx, cy, cz + 0.02), yaw, step=0.02)\n    c.move((cx, cy, travel_z), yaw, step=0.05)\n    c.move((bx, by, travel_z), yaw, step=0.09)\n    if not c.suction(True):          # lost the cube on the way\n        c.suction(False)\n        return False\n    c.move((bx, by, brim + 0.005), yaw, step=0.035)\n    c.suction(False)\n    c.move((bx, by, travel_z), yaw, step=0.06)\n    return c.done()\n\n\ndef run(api):\n    c = _Ctl(api)\n    try:\n        if c.done():\n            return\n        bowls = {name: c.bowl(name) for name in (\"cream\", \"grey\", \"black\")}\n        rim = max(b[2] for b in bowls.values())\n        travel_z = rim + CUBE + 0.07   # held cube clears every rim by ~7 cm\n        for _ in range(4):\n            if MAX_CALLS - c.calls < 75:\n                break\n            if _attempt(c, bowls, travel_z):\n                return\n    except _Budget:\n        try:\n            api.suction(False)\n        except Exception:\n            pass\n```\n\nThe policy reads the cube and bowl poses from the camera (averaged) rather than trusting the nominal positions, then moves in short interpolated segments at a height that keeps the held cube about 7 cm above every rim. It picks by creeping onto the top face in 1\u20132 mm steps with the vacuum on, stopping as soon as the cup seals, so the contact force stays low. It lowers the cube inside the matching bowl before releasing, checks `done()`, and re-senses and retries within the 300-call budget if anything failed.",
-  "code": "import math\n\nCUBE = 0.040\nBOWL_FOR = {\"red\": \"cream\", \"green\": \"grey\", \"blue\": \"black\"}\nMAX_CALLS = 300\n\n\nclass _Budget(Exception):\n    pass\n\n\nclass _Ctl:\n    def __init__(self, api):\n        self.api = api\n        self.calls = 0\n        self.pos = None  # last commanded pad position\n\n    def _tick(self):\n        if self.calls >= MAX_CALLS - 1:\n            raise _Budget()\n        self.calls += 1\n\n    def cube(self, n=3):\n        xs = ys = zs = s = c = 0.0\n        votes = {}\n        for _ in range(n):\n            self._tick()\n            (x, y, z), yaw, col = self.api.cube_pose()\n            xs += x; ys += y; zs += z\n            s += math.sin(math.radians(4.0 * yaw))\n            c += math.cos(math.radians(4.0 * yaw))\n            votes[col] = votes.get(col, 0) + 1\n        yaw = math.degrees(math.atan2(s, c)) / 4.0\n        col = max(votes, key=votes.get)\n        return (xs / n, ys / n, zs / n), yaw, col\n\n    def bowl(self, name, n=2):\n        xs = ys = zs = 0.0\n        for _ in range(n):\n            self._tick()\n            (x, y, z), _ = self.api.bowl_pose(name)\n            xs += x; ys += y; zs += z\n        return xs / n, ys / n, zs / n\n\n    def move(self, xyz, yaw, step=0.10):\n        \"\"\"Move in short, roughly straight segments (joint-space moves bow otherwise).\"\"\"\n        tgt = (float(xyz[0]), float(xyz[1]), float(xyz[2]))\n        if self.pos is None:\n            self._tick()\n            self.api.move_to(tgt, yaw)\n            self.pos = tgt\n            return\n        p = self.pos\n        d = math.sqrt(sum((tgt[i] - p[i]) ** 2 for i in range(3)))\n        n = max(1, int(math.ceil(d / step)))\n        for k in range(1, n + 1):\n            t = k / float(n)\n            q = tuple(p[i] + (tgt[i] - p[i]) * t for i in range(3))\n            self._tick()\n            self.api.move_to(q, yaw)\n            self.pos = q\n\n    def suction(self, on):\n        self._tick()\n        return bool(self.api.suction(on))\n\n    def done(self):\n        self._tick()\n        return bool(self.api.done())\n\n\ndef _attempt(c, bowls, travel_z):\n    (cx, cy, cz), yaw, col = c.cube()\n    bx, by, brim = bowls[BOWL_FOR.get(col, \"grey\")]\n\n    # rise straight up first (if we know where we are), then go above the cube\n    if c.pos is not None and c.pos[2] < travel_z - 1e-4:\n        c.move((c.pos[0], c.pos[1], travel_z), yaw, step=0.05)\n    c.move((cx, cy, travel_z), yaw, step=0.12)\n    c.move((cx, cy, cz + 0.030), yaw, step=0.05)\n    c.move((cx, cy, cz + 0.010), yaw, step=0.02)\n\n    # gentle touch-down: creep onto the top face until the vacuum seals\n    held = False\n    for dz in (0.004, 0.002, 0.001, 0.0, -0.001, -0.002):\n        c.move((cx, cy, cz + dz), yaw, step=0.02)\n        if c.suction(True):\n            held = True\n            break\n    if not held:\n        c.suction(False)\n        c.move((cx, cy, travel_z), yaw, step=0.05)\n        return False\n\n    # lift vertically, carry high over the rims, lower into the bowl, release\n    c.move((cx, cy, cz + 0.02), yaw, step=0.02)\n    c.move((cx, cy, travel_z), yaw, step=0.05)\n    c.move((bx, by, travel_z), yaw, step=0.09)\n    if not c.suction(True):          # lost the cube on the way\n        c.suction(False)\n        return False\n    c.move((bx, by, brim + 0.005), yaw, step=0.035)\n    c.suction(False)\n    c.move((bx, by, travel_z), yaw, step=0.06)\n    return c.done()\n\n\ndef run(api):\n    c = _Ctl(api)\n    try:\n        if c.done():\n            return\n        bowls = {name: c.bowl(name) for name in (\"cream\", \"grey\", \"black\")}\n        rim = max(b[2] for b in bowls.values())\n        travel_z = rim + CUBE + 0.07   # held cube clears every rim by ~7 cm\n        for _ in range(4):\n            if MAX_CALLS - c.calls < 75:\n                break\n            if _attempt(c, bowls, travel_z):\n                return\n    except _Budget:\n        try:\n            api.suction(False)\n        except Exception:\n            pass\n",
+  "prompt": "You are writing the control policy for a cube-in-bowl cell.\n\nA UR5e arm has a suction cup pointing straight down. One 40 mm cube lies on the table; it is red, green or blue.\nThree round bowls stand on the table: cream, grey and black; each is a dish 120 mm across inside, with walls 40 mm high.\nIn our test cell the cube is placed at x = 0.45 +/- 0.05 m, y = -0.05 +/- 0.05 m, yaw = 0 +/- 15 degrees.\nThe bowls are fixed at cream (0.25, 0.30), grey (0.45, 0.30) and black (0.65, 0.30).\nThe red cube belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl.\nThe trial succeeds when the cube rests inside its own bowl with the suction off.\n\nWrite a Python module that defines `def run(api):`. It is called once per trial and must return when\nfinished. `api` is the module below; use only these five functions (plus `math`, which you may import).\nYou have at most 300 API calls per trial. Contact force on the pad above 150 N aborts the trial as a collision.\n\n```python\n\"\"\"The five functions a cube-in-bowl policy may call. A policy is `def run(api): ...` and receives this module.\n\nUnits: metres and degrees in the world frame; z is up and the table top is z = 0.\nThe robot has a suction cup pointing straight down. The centre of its 28 x 28 mm square pad is the controlled\npoint. One 40 mm cube lies on the table; its colour is red, green or blue. Three round bowls stand on the table:\ncream, grey and black. Each bowl is a round dish 120 mm across inside, with 40 mm high walls. The red cube\nbelongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl. The trial\nsucceeds when the cube rests inside its own bowl with the suction off.\n\"\"\"\nfrom __future__ import annotations\n\n_SIM = None  # set by the trial runner\n\n\ndef cube_pose():\n    \"\"\"Camera estimate of the cube: returns ((x, y, z_top_face), yaw_deg, colour).\n    Yaw is the rotation of the cube about z, reported in [-45, 45) because a square repeats every 90 degrees.\n    colour is \"red\", \"green\" or \"blue\".\"\"\"\n    return _SIM.cube_pose()\n\n\ndef bowl_pose(bowl):\n    \"\"\"Camera estimate of the bowl (\"cream\", \"grey\" or \"black\"): returns ((x, y, z_rim), yaw_deg).\n    (x, y) is the centre of the bowl floor; z_rim is the height of the top of its wall.\"\"\"\n    return _SIM.bowl_pose(bowl)\n\n\ndef move_to(xyz, yaw_deg):\n    \"\"\"Move the pad centre to xyz (metres) with the pad rotated yaw_deg about z, cup pointing down.\n    Joint-space motion; blocks until the arm has settled. A held cube moves with the cup.\n    The run is aborted as a collision if the contact force on the pad ever exceeds 150 N.\"\"\"\n    return _SIM.move_to(xyz, yaw_deg)\n\n\ndef suction(on):\n    \"\"\"Switch the vacuum on (True) or off (False), then wait for things to settle.\n    The pad grips only what it touches. Returns True if the cup now holds the cube, else False.\n    Switching off releases the cube, which drops from where it is.\"\"\"\n    return _SIM.suction(on)\n\n\ndef done():\n    \"\"\"True if the cube rests inside the bowl that matches its colour (each bowl has a load cell).\"\"\"\n    return _SIM.done()\n\n```\n\nReply with the complete module in a single ```python code block, followed by at most three sentences\nexplaining the strategy.",
+  "response": "```python\nimport math\n\nSAFE_Z = 0.22          # transport height for the pad centre\nCUBE = 0.04\nTARGET = {\"red\": \"cream\", \"green\": \"grey\", \"blue\": \"black\"}\nMAX_CALLS = 300\n\n\nclass _Budget(Exception):\n    pass\n\n\ndef run(api):\n    state = {\"n\": 0, \"pos\": None}\n\n    def tick(reserve=0):\n        if state[\"n\"] + 1 + reserve > MAX_CALLS:\n            raise _Budget()\n        state[\"n\"] += 1\n\n    def raw_move(p, yaw):\n        tick(reserve=2)\n        api.move_to((p[0], p[1], p[2]), yaw)\n        state[\"pos\"] = (p[0], p[1], p[2])\n\n    def move(p, yaw, step=0.08):\n        \"\"\"Cartesian-ish move: split into short segments so the joint-space path stays near a line.\"\"\"\n        s = state[\"pos\"]\n        if s is None:\n            raw_move(p, yaw)\n            return\n        d = math.sqrt(sum((p[i] - s[i]) ** 2 for i in range(3)))\n        n = max(1, int(math.ceil(d / step)))\n        for k in range(1, n + 1):\n            t = k / float(n)\n            raw_move(tuple(s[i] + (p[i] - s[i]) * t for i in range(3)), yaw)\n\n    def suction(on):\n        tick(reserve=1)\n        return api.suction(on)\n\n    def is_done():\n        tick()\n        return api.done()\n\n    def attempt():\n        tick()\n        (cx, cy, ctop), cyaw, colour = api.cube_pose()\n        bowl = TARGET.get(colour, \"grey\")\n        tick()\n        (bx, by, brim), _ = api.bowl_pose(bowl)\n\n        yaw = cyaw\n        # go above the cube at safe height (lift straight up first if we are low)\n        if state[\"pos\"] is not None and state[\"pos\"][2] < SAFE_Z - 1e-4:\n            move((state[\"pos\"][0], state[\"pos\"][1], SAFE_Z), yaw, 0.04)\n        move((cx, cy, SAFE_Z), yaw)\n        suction(False)\n        # descend close to the top face\n        move((cx, cy, ctop + 0.03), yaw, 0.04)\n        held = False\n        for dz in (0.004, 0.002, 0.001, 0.0, -0.001, -0.002):\n            raw_move((cx, cy, ctop + dz), yaw)\n            if suction(True):\n                held = True\n                break\n        if not held:\n            suction(False)\n            move((cx, cy, SAFE_Z), yaw, 0.04)\n            return False\n\n        # lift, carry, lower into the bowl\n        move((cx, cy, SAFE_Z), yaw, 0.03)\n        move((bx, by, SAFE_Z), yaw, 0.07)\n        floor = max(0.0, brim - 0.04)\n        z_rel = floor + CUBE + 0.012\n        move((bx, by, z_rel), yaw, 0.03)\n        suction(False)\n        move((bx, by, SAFE_Z), yaw, 0.04)\n        return True\n\n    try:\n        for _ in range(6):\n            if state[\"n\"] > MAX_CALLS - 60:\n                break\n            attempt()\n            if is_done():\n                break\n    except _Budget:\n        pass\n    try:\n        if state[\"n\"] < MAX_CALLS:\n            api.suction(False)\n    except Exception:\n        pass\n```\n\nThe policy reads the cube pose and colour, hovers over the cube with the pad aligned to its yaw, and steps down in millimetre increments from just above the top face, trying the suction at each step so the pad never presses hard. It then lifts to a safe height, carries the cube in short straight segments to the camera-reported centre of the matching bowl, lowers it to about 1 cm above the bowl floor and releases. It checks `done()` and re-observes and retries if needed, with a call counter keeping it under the 300-call limit; I have not run it against the simulator, so the heights and step sizes are untested.",
+  "code": "import math\n\nSAFE_Z = 0.22          # transport height for the pad centre\nCUBE = 0.04\nTARGET = {\"red\": \"cream\", \"green\": \"grey\", \"blue\": \"black\"}\nMAX_CALLS = 300\n\n\nclass _Budget(Exception):\n    pass\n\n\ndef run(api):\n    state = {\"n\": 0, \"pos\": None}\n\n    def tick(reserve=0):\n        if state[\"n\"] + 1 + reserve > MAX_CALLS:\n            raise _Budget()\n        state[\"n\"] += 1\n\n    def raw_move(p, yaw):\n        tick(reserve=2)\n        api.move_to((p[0], p[1], p[2]), yaw)\n        state[\"pos\"] = (p[0], p[1], p[2])\n\n    def move(p, yaw, step=0.08):\n        \"\"\"Cartesian-ish move: split into short segments so the joint-space path stays near a line.\"\"\"\n        s = state[\"pos\"]\n        if s is None:\n            raw_move(p, yaw)\n            return\n        d = math.sqrt(sum((p[i] - s[i]) ** 2 for i in range(3)))\n        n = max(1, int(math.ceil(d / step)))\n        for k in range(1, n + 1):\n            t = k / float(n)\n            raw_move(tuple(s[i] + (p[i] - s[i]) * t for i in range(3)), yaw)\n\n    def suction(on):\n        tick(reserve=1)\n        return api.suction(on)\n\n    def is_done():\n        tick()\n        return api.done()\n\n    def attempt():\n        tick()\n        (cx, cy, ctop), cyaw, colour = api.cube_pose()\n        bowl = TARGET.get(colour, \"grey\")\n        tick()\n        (bx, by, brim), _ = api.bowl_pose(bowl)\n\n        yaw = cyaw\n        # go above the cube at safe height (lift straight up first if we are low)\n        if state[\"pos\"] is not None and state[\"pos\"][2] < SAFE_Z - 1e-4:\n            move((state[\"pos\"][0], state[\"pos\"][1], SAFE_Z), yaw, 0.04)\n        move((cx, cy, SAFE_Z), yaw)\n        suction(False)\n        # descend close to the top face\n        move((cx, cy, ctop + 0.03), yaw, 0.04)\n        held = False\n        for dz in (0.004, 0.002, 0.001, 0.0, -0.001, -0.002):\n            raw_move((cx, cy, ctop + dz), yaw)\n            if suction(True):\n                held = True\n                break\n        if not held:\n            suction(False)\n            move((cx, cy, SAFE_Z), yaw, 0.04)\n            return False\n\n        # lift, carry, lower into the bowl\n        move((cx, cy, SAFE_Z), yaw, 0.03)\n        move((bx, by, SAFE_Z), yaw, 0.07)\n        floor = max(0.0, brim - 0.04)\n        z_rel = floor + CUBE + 0.012\n        move((bx, by, z_rel), yaw, 0.03)\n        suction(False)\n        move((bx, by, SAFE_Z), yaw, 0.04)\n        return True\n\n    try:\n        for _ in range(6):\n            if state[\"n\"] > MAX_CALLS - 60:\n                break\n            attempt()\n            if is_done():\n                break\n    except _Budget:\n        pass\n    try:\n        if state[\"n\"] < MAX_CALLS:\n            api.suction(False)\n    except Exception:\n        pass\n",
   "policy_path": "results/policies/bowl_fable_v1.py"
  },
  "steps": [
   {
    "i": 1,
-   "api": "done",
+   "api": "cube_pose",
    "args": {},
-   "result": false,
+   "result": [
+    [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.03989224457978385
+    ],
+    36.801438561977854,
+    "red"
+   ],
    "tcp": [
     0.4648,
     0.0186,
@@ -50,9 +58,9 @@
    },
    "result": [
     [
-     0.24976180546489954,
-     0.30030707470920665,
-     0.06
+     0.250667589199513,
+     0.2995000517325219,
+     0.04
     ],
     0.0
    ],
@@ -65,208 +73,190 @@
   },
   {
    "i": 3,
-   "api": "bowl_pose",
+   "api": "move_to",
    "args": {
-    "bowl": "cream"
-   },
-   "result": [
-    [
-     0.24996723106278015,
-     0.300667589199513,
-     0.06
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.22
     ],
-    0.0
-   ],
+    "yaw": 36.801438561977854
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1461,
+    -0.2224,
+    0.2223
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 4,
-   "api": "bowl_pose",
+   "api": "suction",
    "args": {
-    "bowl": "grey"
+    "on": false
    },
-   "result": [
-    [
-     0.44950005173252194,
-     0.30037730677220414,
-     0.06
-    ],
-    0.0
-   ],
+   "result": false,
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1242,
+    -0.2189,
+    0.2201
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 5,
-   "api": "bowl_pose",
+   "api": "move_to",
    "args": {
-    "bowl": "grey"
-   },
-   "result": [
-    [
-     0.4502947415964669,
-     0.3002131600581501,
-     0.06
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.18247306114494596
     ],
-    0.0
-   ],
+    "yaw": 36.801438561977854
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1238,
+    -0.2191,
+    0.1854
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 6,
-   "api": "bowl_pose",
+   "api": "move_to",
    "args": {
-    "bowl": "black"
-   },
-   "result": [
-    [
-     0.6501348481543279,
-     0.30021002489156484,
-     0.06
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.14494612228989193
     ],
-    0.0
-   ],
+    "yaw": 36.801438561977854
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1238,
+    -0.2192,
+    0.1479
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 7,
-   "api": "bowl_pose",
+   "api": "move_to",
    "args": {
-    "bowl": "black"
-   },
-   "result": [
-    [
-     0.6499881617666038,
-     0.29978123857930583,
-     0.06
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.10741918343483789
     ],
-    0.0
-   ],
+    "yaw": 36.801438561977854
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1238,
+    -0.2192,
+    0.1103
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 8,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.12725821296061632,
-     -0.21060118625562194,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.06989224457978385
     ],
-    36.519748051038476,
-    "red"
-   ],
+    "yaw": 36.801438561977854
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1238,
+    -0.2193,
+    0.0727
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 9,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.12147523009888005,
-     -0.20785501366660403,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.04389224457978386
     ],
-    36.0981040316437,
-    "red"
-   ],
+    "yaw": 36.801438561977854
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1237,
+    -0.2216,
+    0.0466
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 10,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.11928658927161798,
-     -0.22464945742487713,
-     0.03989224457978385
-    ],
-    35.76702692884859,
-    "red"
-   ],
+   "api": "suction",
+   "args": {
+    "on": true
+   },
+   "result": false,
    "tcp": [
-    0.4648,
-    0.0186,
-    0.1684
+    0.1237,
+    -0.2224,
+    0.0453
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 11,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.17
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.041892244579783855
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1444,
-    -0.2176,
-    0.1756
+    0.1236,
+    -0.2231,
+    0.0432
    ],
    "force_N": 0.0
   },
   {
    "i": 12,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.1366307481932613
-    ],
-    "yaw": 36.12828953522781
+    "on": true
    },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
+   "result": false,
    "tcp": [
-    0.123,
-    -0.2147,
-    0.1393
+    0.1236,
+    -0.2232,
+    0.0431
    ],
    "force_N": 0.0
   },
@@ -275,40 +265,33 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.10326149638652257
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.040892244579783854
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1227,
-    -0.2147,
-    0.1058
+    0.1236,
+    -0.2235,
+    0.0422
    ],
    "force_N": 0.0
   },
   {
    "i": 14,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.06989224457978385
-    ],
-    "yaw": 36.12828953522781
+    "on": true
    },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
+   "result": false,
    "tcp": [
-    0.1226,
-    -0.2147,
-    0.0724
+    0.1236,
+    -0.2235,
+    0.0421
    ],
    "force_N": 0.0
   },
@@ -317,110 +300,103 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.049892244579783855
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.03989224457978385
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1223,
-    -0.2214,
-    0.0536
+    0.1236,
+    -0.2238,
+    0.0412
    ],
    "force_N": 0.0
   },
   {
    "i": 16,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.04389224457978386
-    ],
-    "yaw": 36.12828953522781
+    "on": true
    },
-   "result": {
-    "ik_residual_mm": 0.01
-   },
+   "result": false,
    "tcp": [
-    0.1221,
-    -0.2245,
-    0.0472
+    0.1236,
+    -0.2238,
+    0.0412
    ],
    "force_N": 0.0
   },
   {
    "i": 17,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.03889224457978385
+    ],
+    "yaw": 36.801438561977854
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1221,
-    -0.2248,
-    0.0469
+    0.1236,
+    -0.224,
+    0.0403
    ],
    "force_N": 0.0
   },
   {
    "i": 18,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.041892244579783855
-    ],
-    "yaw": 36.12828953522781
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1221,
-    -0.2254,
-    0.045
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 19,
    "api": "suction",
    "args": {
     "on": true
    },
    "result": false,
    "tcp": [
-    0.1221,
-    -0.2255,
-    0.0449
+    0.1236,
+    -0.2241,
+    0.0402
    ],
    "force_N": 0.0
   },
   {
-   "i": 20,
+   "i": 19,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.040892244579783854
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.03789224457978385
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1221,
-    -0.2258,
-    0.0439
+    0.1236,
+    -0.2243,
+    0.0393
+   ],
+   "force_N": 0.0
+  },
+  {
+   "i": 20,
+   "api": "suction",
+   "args": {
+    "on": true
+   },
+   "result": false,
+   "tcp": [
+    0.1236,
+    -0.2243,
+    0.0392
    ],
    "force_N": 0.0
   },
@@ -428,13 +404,13 @@
    "i": 21,
    "api": "suction",
    "args": {
-    "on": true
+    "on": false
    },
    "result": false,
    "tcp": [
-    0.1221,
-    -0.2258,
-    0.0439
+    0.1236,
+    -0.2243,
+    0.0392
    ],
    "force_N": 0.0
   },
@@ -443,33 +419,40 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.03989224457978385
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.07431379566382709
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.122,
-    -0.2261,
-    0.0429
+    0.1238,
+    -0.2194,
+    0.0714
    ],
    "force_N": 0.0
   },
   {
    "i": 23,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.11073534674787032
+    ],
+    "yaw": 36.801438561977854
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.122,
-    -0.2262,
-    0.0429
+    0.1238,
+    -0.2193,
+    0.1076
    ],
    "force_N": 0.0
   },
@@ -478,33 +461,40 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.03889224457978385
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.14715689783191355
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.122,
-    -0.2264,
-    0.0419
+    0.1238,
+    -0.2192,
+    0.144
    ],
    "force_N": 0.0
   },
   {
    "i": 25,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.1835784489159568
+    ],
+    "yaw": 36.801438561977854
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.122,
-    -0.2265,
-    0.0419
+    0.1238,
+    -0.2192,
+    0.1805
    ],
    "force_N": 0.0
   },
@@ -513,191 +503,191 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.03789224457978385
+     0.12383729619690502,
+     -0.21882588776644513,
+     0.22
     ],
-    "yaw": 36.12828953522781
+    "yaw": 36.801438561977854
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.122,
-    -0.2267,
-    0.0409
+    0.1238,
+    -0.2191,
+    0.217
    ],
    "force_N": 0.0
   },
   {
    "i": 27,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
+   "api": "done",
+   "args": {},
    "result": false,
    "tcp": [
-    0.122,
-    -0.2267,
-    0.0409
+    0.1238,
+    -0.2191,
+    0.217
    ],
-   "force_N": 0.0
+   "force_N": null
   },
   {
    "i": 28,
-   "api": "suction",
-   "args": {
-    "on": false
-   },
-   "result": false,
-   "tcp": [
-    0.122,
-    -0.2268,
-    0.0409
+   "api": "cube_pose",
+   "args": {},
+   "result": [
+    [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.03989224457978385
+    ],
+    37.10884980619025,
+    "red"
    ],
-   "force_N": 0.0
+   "tcp": [
+    0.1238,
+    -0.2191,
+    0.217
+   ],
+   "force_N": null
   },
   {
    "i": 29,
-   "api": "move_to",
+   "api": "bowl_pose",
    "args": {
-    "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.08192816305318923
+    "bowl": "cream"
+   },
+   "result": [
+    [
+     0.2501348481543278,
+     0.30021002489156484,
+     0.04
     ],
-    "yaw": 36.12828953522781
-   },
-   "result": {
-    "ik_residual_mm": 0.01
-   },
-   "tcp": [
-    0.1226,
-    -0.2156,
-    0.0785
+    0.0
    ],
-   "force_N": 0.0
+   "tcp": [
+    0.1238,
+    -0.2191,
+    0.217
+   ],
+   "force_N": null
   },
   {
    "i": 30,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.1259640815265946
+     0.143714707813771,
+     -0.21922417901355642,
+     0.22
     ],
-    "yaw": 36.12828953522781
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1227,
-    -0.2151,
-    0.1221
+    0.1421,
+    -0.2193,
+    0.22
    ],
    "force_N": 0.0
   },
   {
    "i": 31,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.12267334411037145,
-     -0.21436855244903433,
-     0.17
-    ],
-    "yaw": 36.12828953522781
+    "on": false
    },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
+   "result": false,
    "tcp": [
-    0.1227,
-    -0.2149,
-    0.1662
+    0.1437,
+    -0.2192,
+    0.22
    ],
    "force_N": 0.0
   },
   {
    "i": 32,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.13785831178887892,
-     -0.2331896018508016,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.18247306114494596
     ],
-    36.875420410281166,
-    "red"
-   ],
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1227,
-    -0.2149,
-    0.1662
+    0.1437,
+    -0.2195,
+    0.1854
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 33,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.14213877909068054,
-     -0.23857021773378978,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.14494612228989193
     ],
-    36.75585757843696,
-    "red"
-   ],
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1227,
-    -0.2149,
-    0.1662
+    0.1437,
+    -0.2195,
+    0.1479
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 34,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.11404047103762649,
-     -0.24063987047356183,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.10741918343483789
     ],
-    37.483060923674415,
-    "red"
-   ],
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1227,
-    -0.2149,
-    0.1662
+    0.1437,
+    -0.2196,
+    0.1103
    ],
-   "force_N": null
+   "force_N": 0.0
   },
   {
    "i": 35,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.17
+     0.143714707813771,
+     -0.21922417901355642,
+     0.06989224457978385
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1306,
-    -0.2356,
-    0.1701
+    0.1437,
+    -0.2196,
+    0.0727
    ],
    "force_N": 0.0
   },
@@ -706,40 +696,33 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.1366307481932613
+     0.143714707813771,
+     -0.21922417901355642,
+     0.04389224457978386
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2377,
-    0.1392
+    0.1437,
+    -0.2194,
+    0.0459
    ],
    "force_N": 0.0
   },
   {
    "i": 37,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.10326149638652257
-    ],
-    "yaw": 37.03809637022393
+    "on": true
    },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
+   "result": false,
    "tcp": [
-    0.1313,
-    -0.2377,
-    0.1058
+    0.1437,
+    -0.2193,
+    0.0443
    ],
    "force_N": 0.0
   },
@@ -748,429 +731,467 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.06989224457978385
+     0.143714707813771,
+     -0.21922417901355642,
+     0.041892244579783855
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2378,
-    0.0725
+    0.1437,
+    -0.2192,
+    0.042
    ],
-   "force_N": 0.0
+   "force_N": 23.92
   },
   {
    "i": 39,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.049892244579783855
-    ],
-    "yaw": 37.03809637022393
+    "on": true
    },
-   "result": {
-    "ik_residual_mm": 0.01
-   },
+   "result": true,
    "tcp": [
-    0.1313,
-    -0.2376,
-    0.0515
+    0.1437,
+    -0.2192,
+    0.0419
    ],
-   "force_N": 0.0
+   "force_N": 19.98
   },
   {
    "i": 40,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.04389224457978386
+     0.143714707813771,
+     -0.21922417901355642,
+     0.07157687048315321
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0444
+    0.1437,
+    -0.2194,
+    0.0691
    ],
-   "force_N": 0.0
+   "force_N": 19.93
   },
   {
    "i": 41,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.10126149638652257
+    ],
+    "yaw": 37.10884980619025
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.044
+    0.1437,
+    -0.2195,
+    0.0987
    ],
-   "force_N": 0.0
+   "force_N": 19.91
   },
   {
    "i": 42,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.041892244579783855
+     0.143714707813771,
+     -0.21922417901355642,
+     0.13094612228989194
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0421
+    0.1437,
+    -0.2194,
+    0.1284
    ],
-   "force_N": 0.0
+   "force_N": 19.88
   },
   {
    "i": 43,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.16063074819326129
+    ],
+    "yaw": 37.10884980619025
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0419
+    0.1437,
+    -0.2194,
+    0.1581
    ],
-   "force_N": 0.0
+   "force_N": 19.74
   },
   {
    "i": 44,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.040892244579783854
+     0.143714707813771,
+     -0.21922417901355642,
+     0.19031537409663066
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.041
+    0.1437,
+    -0.2194,
+    0.1878
    ],
-   "force_N": 0.0
+   "force_N": 19.77
   },
   {
    "i": 45,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.143714707813771,
+     -0.21922417901355642,
+     0.22
+    ],
+    "yaw": 37.10884980619025
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0409
+    0.1437,
+    -0.2194,
+    0.2175
    ],
-   "force_N": 0.0
+   "force_N": 19.78
   },
   {
    "i": 46,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.03989224457978385
+     0.1570172253563406,
+     -0.15429490352541625,
+     0.22
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.04
+    0.1563,
+    -0.1594,
+    0.2203
    ],
-   "force_N": 0.0
+   "force_N": 19.78
   },
   {
    "i": 47,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.1703197428989102,
+     -0.0893656280372761,
+     0.22
+    ],
+    "yaw": 37.10884980619025
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0399
+    0.1699,
+    -0.0946,
+    0.2202
    ],
-   "force_N": 0.0
+   "force_N": 19.82
   },
   {
    "i": 48,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.03889224457978385
+     0.18362226044147978,
+     -0.024436352549135926,
+     0.22
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.01
+   },
+   "tcp": [
+    0.1834,
+    -0.0298,
+    0.22
+   ],
+   "force_N": 19.82
+  },
+  {
+   "i": 49,
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.1969247779840494,
+     0.04049292293900422,
+     0.22
+    ],
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.039
+    0.1966,
+    0.0348,
+    0.22
    ],
-   "force_N": 0.0
-  },
-  {
-   "i": 49,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1313,
-    -0.2375,
-    0.0389
-   ],
-   "force_N": 0.0
+   "force_N": 19.89
   },
   {
    "i": 50,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.03789224457978385
+     0.210227295526619,
+     0.10542219842714437,
+     0.22
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.038
+    0.2099,
+    0.0993,
+    0.2203
    ],
-   "force_N": 0.0
+   "force_N": 19.58
   },
   {
    "i": 51,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": true
+    "xyz": [
+     0.2235298130691886,
+     0.17035147391528457,
+     0.22
+    ],
+    "yaw": 37.10884980619025
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.01
+   },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0379
+    0.2231,
+    0.1642,
+    0.2204
    ],
-   "force_N": 0.0
+   "force_N": 19.68
   },
   {
    "i": 52,
-   "api": "suction",
+   "api": "move_to",
    "args": {
-    "on": false
+    "xyz": [
+     0.23683233061175818,
+     0.23528074940342472,
+     0.22
+    ],
+    "yaw": 37.10884980619025
    },
-   "result": false,
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1313,
-    -0.2375,
-    0.0379
+    0.2363,
+    0.2293,
+    0.2204
    ],
-   "force_N": 0.0
+   "force_N": 19.65
   },
   {
    "i": 53,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.08192816305318923
+     0.2501348481543278,
+     0.3002100248915649,
+     0.22
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1314,
-    -0.238,
-    0.0783
+    0.2495,
+    0.2944,
+    0.2203
    ],
-   "force_N": 0.0
+   "force_N": 19.64
   },
   {
    "i": 54,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.1259640815265946
+     0.2501348481543278,
+     0.3002100248915649,
+     0.192
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1314,
-    -0.238,
-    0.1222
+    0.2502,
+    0.3001,
+    0.1941
    ],
-   "force_N": 0.0
+   "force_N": 19.69
   },
   {
    "i": 55,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.13134585397239532,
-     -0.23746656335271774,
-     0.17
+     0.2501348481543278,
+     0.3002100248915649,
+     0.164
     ],
-    "yaw": 37.03809637022393
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1314,
-    -0.238,
-    0.1663
+    0.2502,
+    0.3002,
+    0.1661
    ],
-   "force_N": 0.0
+   "force_N": 19.53
   },
   {
    "i": 56,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.13405637632835016,
-     -0.2481446075524122,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.2501348481543278,
+     0.3002100248915649,
+     0.136
     ],
-    36.80345102944483,
-    "red"
-   ],
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1314,
-    -0.238,
-    0.1663
+    0.2502,
+    0.3002,
+    0.1381
    ],
-   "force_N": null
+   "force_N": 19.52
   },
   {
    "i": 57,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.13329178017101526,
-     -0.2087244531013277,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.2501348481543278,
+     0.30021002489156484,
+     0.10800000000000001
     ],
-    37.08857247707688,
-    "red"
-   ],
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1314,
-    -0.238,
-    0.1663
+    0.2502,
+    0.3002,
+    0.1101
    ],
-   "force_N": null
+   "force_N": 19.52
   },
   {
    "i": 58,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.12187866879040683,
-     -0.24565352219868528,
-     0.03989224457978385
+   "api": "move_to",
+   "args": {
+    "xyz": [
+     0.2501348481543278,
+     0.30021002489156484,
+     0.08000000000000002
     ],
-    36.37939494196053,
-    "red"
-   ],
+    "yaw": 37.10884980619025
+   },
+   "result": {
+    "ik_residual_mm": 0.0
+   },
    "tcp": [
-    0.1314,
-    -0.238,
-    0.1663
+    0.2502,
+    0.3002,
+    0.0822
    ],
-   "force_N": null
+   "force_N": 19.52
   },
   {
    "i": 59,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.17
+     0.2501348481543278,
+     0.30021002489156484,
+     0.05200000000000002
     ],
-    "yaw": 36.757144193404116
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1299,
-    -0.2344,
-    0.1699
+    0.2499,
+    0.3002,
+    0.0541
    ],
-   "force_N": 0.0
+   "force_N": 22.0
   },
   {
    "i": 60,
-   "api": "move_to",
+   "api": "suction",
    "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.1366307481932613
-    ],
-    "yaw": 36.757144193404116
+    "on": false
    },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
+   "result": false,
    "tcp": [
-    0.1297,
-    -0.2344,
-    0.1392
+    0.2501,
+    0.3002,
+    0.052
    ],
    "force_N": 0.0
   },
@@ -1179,19 +1200,19 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.10326149638652257
+     0.2501348481543278,
+     0.30021002489156484,
+     0.08560000000000001
     ],
-    "yaw": 36.757144193404116
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1297,
-    -0.2345,
-    0.1058
+    0.2503,
+    0.3003,
+    0.0829
    ],
    "force_N": 0.0
   },
@@ -1200,19 +1221,19 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.06989224457978385
+     0.2501348481543278,
+     0.30021002489156484,
+     0.11920000000000001
     ],
-    "yaw": 36.757144193404116
+    "yaw": 37.10884980619025
    },
    "result": {
-    "ik_residual_mm": 0.0
+    "ik_residual_mm": 0.01
    },
    "tcp": [
-    0.1297,
-    -0.2345,
-    0.0725
+    0.2503,
+    0.3003,
+    0.1164
    ],
    "force_N": 0.0
   },
@@ -1221,19 +1242,19 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.049892244579783855
+     0.2501348481543278,
+     0.30021002489156484,
+     0.1528
     ],
-    "yaw": 36.757144193404116
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.01
    },
    "tcp": [
-    0.1297,
-    -0.2343,
-    0.0515
+    0.2503,
+    0.3003,
+    0.15
    ],
    "force_N": 0.0
   },
@@ -1242,759 +1263,88 @@
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.04389224457978386
+     0.2501348481543278,
+     0.30021002489156484,
+     0.1864
     ],
-    "yaw": 36.757144193404116
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.0
    },
    "tcp": [
-    0.1297,
-    -0.2342,
-    0.0444
+    0.2503,
+    0.3003,
+    0.1836
    ],
    "force_N": 0.0
   },
   {
    "i": 65,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.044
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 66,
    "api": "move_to",
    "args": {
     "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.041892244579783855
+     0.2501348481543278,
+     0.30021002489156484,
+     0.22
     ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0421
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 67,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0419
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 68,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.040892244579783854
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.041
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 69,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0409
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 70,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.03989224457978385
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.04
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 71,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0399
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 72,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.03889224457978385
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.039
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 73,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0389
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 74,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.03789224457978385
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.038
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 75,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0379
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 76,
-   "api": "suction",
-   "args": {
-    "on": false
-   },
-   "result": false,
-   "tcp": [
-    0.1297,
-    -0.2342,
-    0.0379
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 77,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.08192816305318923
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1298,
-    -0.2347,
-    0.0783
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 78,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.1259640815265946
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1298,
-    -0.2347,
-    0.1222
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 79,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12974227509659073,
-     -0.23417419428414174,
-     0.17
-    ],
-    "yaw": 36.757144193404116
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1297,
-    -0.2347,
-    0.1662
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 80,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.12515056210346603,
-     -0.23151933429211358,
-     0.03989224457978385
-    ],
-    37.19622665700632,
-    "red"
-   ],
-   "tcp": [
-    0.1297,
-    -0.2347,
-    0.1662
-   ],
-   "force_N": null
-  },
-  {
-   "i": 81,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.1564489907871241,
-     -0.2361173356650574,
-     0.03989224457978385
-    ],
-    37.17638752148208,
-    "red"
-   ],
-   "tcp": [
-    0.1297,
-    -0.2347,
-    0.1662
-   ],
-   "force_N": null
-  },
-  {
-   "i": 82,
-   "api": "cube_pose",
-   "args": {},
-   "result": [
-    [
-     0.10689812097122972,
-     -0.2157761666141726,
-     0.03989224457978385
-    ],
-    37.30162462045964,
-    "red"
-   ],
-   "tcp": [
-    0.1297,
-    -0.2347,
-    0.1662
-   ],
-   "force_N": null
-  },
-  {
-   "i": 83,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.17
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2283,
-    0.1699
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 84,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.1366307481932613
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2281,
-    0.1392
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 85,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.10326149638652257
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2281,
-    0.1058
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 86,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.06989224457978385
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2281,
-    0.0725
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 87,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.049892244579783855
-    ],
-    "yaw": 37.22474618018719
+    "yaw": 37.10884980619025
    },
    "result": {
     "ik_residual_mm": 0.01
    },
    "tcp": [
-    0.1295,
-    -0.2279,
-    0.0515
+    0.2503,
+    0.3003,
+    0.2172
    ],
    "force_N": 0.0
   },
   {
-   "i": 88,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.04389224457978386
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
+   "i": 66,
+   "api": "done",
+   "args": {},
+   "result": true,
    "tcp": [
-    0.1295,
-    -0.2278,
-    0.0444
+    0.2503,
+    0.3003,
+    0.2172
    ],
-   "force_N": 0.0
+   "force_N": null
   },
   {
-   "i": 89,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.044
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 90,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.041892244579783855
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.0421
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 91,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.0419
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 92,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.040892244579783854
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.041
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 93,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.0409
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 94,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.03989224457978385
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.04
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 95,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.0399
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 96,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.03889224457978385
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.039
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 97,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.0389
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 98,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.03789224457978385
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.038
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 99,
-   "api": "suction",
-   "args": {
-    "on": true
-   },
-   "result": false,
-   "tcp": [
-    0.1295,
-    -0.2278,
-    0.0379
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 100,
+   "i": 67,
    "api": "suction",
    "args": {
     "on": false
    },
    "result": false,
    "tcp": [
-    0.1295,
-    -0.2278,
-    0.0379
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 101,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.08192816305318923
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2284,
-    0.0782
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 102,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.1259640815265946
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2284,
-    0.1222
-   ],
-   "force_N": 0.0
-  },
-  {
-   "i": 103,
-   "api": "move_to",
-   "args": {
-    "xyz": [
-     0.12949922462060662,
-     -0.22780427885711454,
-     0.17
-    ],
-    "yaw": 37.22474618018719
-   },
-   "result": {
-    "ik_residual_mm": 0.0
-   },
-   "tcp": [
-    0.1295,
-    -0.2283,
-    0.1662
+    0.2501,
+    0.3002,
+    0.2199
    ],
    "force_N": 0.0
   }
  ],
  "agent": null,
  "outcome": {
-  "success": false,
+  "success": true,
   "colour": "red",
-  "bin": null,
-  "lifted": false,
+  "bin": "red",
+  "lifted": true,
   "suction_on": false,
   "cube_xyz": [
-   0.1752,
-   -0.2042,
-   0.0199
+   0.2812,
+   0.3048,
+   0.0249
   ],
-  "max_force_N": 0.0,
-  "bowl": null,
+  "max_force_N": 23.9,
+  "bowl": "cream",
   "target_bowl": "cream",
-  "failure_mode": "miss",
+  "failure_mode": "",
   "error": null,
-  "api_calls": 103,
-  "pose_error_mm": 48.357
+  "api_calls": 67,
+  "pose_error_mm": 53.389
  }
 }
