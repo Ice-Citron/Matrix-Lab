@@ -136,7 +136,10 @@ class Handler(BaseHTTPRequestHandler):
             msg = e.read()[:2000].decode(errors="replace")
             print(f"[proxy] anthropic HTTP {e.code}: {msg}", file=sys.stderr, flush=True)
             return self._send(e.code, {"error": {"message": msg}})
-        print(f"[proxy] ok {time.time() - t0:.1f}s stop={data.get('stop_reason')}", file=sys.stderr, flush=True)
+        u = data.get("usage", {})
+        print(f"[proxy] ok {time.time() - t0:.1f}s stop={data.get('stop_reason')} model={body.get('model')} "
+              f"in={u.get('input_tokens')} cache_w={u.get('cache_creation_input_tokens')} "
+              f"cache_r={u.get('cache_read_input_tokens')} out={u.get('output_tokens')}", file=sys.stderr, flush=True)
         self._send(200, to_responses(data))
 
     def log_message(self, *args):
