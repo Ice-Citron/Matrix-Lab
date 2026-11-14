@@ -60,7 +60,7 @@ def run_mj_trial(params: dict, render: bool = False):
     h = param_hash(params)
     sim = PegSim(params, record_every=20 if render else 0)
     api._SIM = sim
-    mode, error = "", None
+    mode, error, policy = "", None, None
 
     def _alarm(*_):
         raise _WallTimeout()
@@ -68,7 +68,8 @@ def run_mj_trial(params: dict, render: bool = False):
     previous = signal.signal(signal.SIGALRM, _alarm)
     signal.alarm(WALL_LIMIT_S)
     try:
-        _load_policy().run(api)
+        policy = _load_policy()
+        policy.run(api)
     except ApiCapReached:
         mode = "timeout"
     except _WallTimeout:
@@ -102,6 +103,7 @@ def run_mj_trial(params: dict, render: bool = False):
     transcript.parent.mkdir(parents=True, exist_ok=True)
     transcript.write_text(json.dumps({"params": {k: params[k] for k in ("dx", "dy", "yaw", "seed")},
                                       "policy_exchange": _exchange(), "steps": sim.log,
+                                      "agent": getattr(policy, "AGENT", None),
                                       "outcome": outcome}, indent=1, default=float))
     return TrialResult(dict(params), bool(outcome["success"] and mode == ""), mode, sim.calls,
                        time.time() - t0, clip,
