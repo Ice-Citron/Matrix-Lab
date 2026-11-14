@@ -50,7 +50,7 @@ SEGFAULT_EXIT = 139              # Kit occasionally segfaults in XOpenDisplay be
 
 # LeRobot joint name -> index in env.scene["robot"].joint_names (the USD order). The SO-101 USD lists
 # the joints in LeRobot order already; _World asserts this at creation.
-TARGET_ORANGE = "Orange001"  # the offset orange and the one success is measured on (base frame x +0.07, y -0.31 m)
+TARGET_ORANGE = "Orange002"  # the offset orange and the one success is measured on: nearest the plate
 JOINT_MAP = {"shoulder_pan": 0, "shoulder_lift": 1, "elbow_flex": 2, "wrist_flex": 3, "wrist_roll": 4,
              "gripper": 5}
 
@@ -69,10 +69,10 @@ limits, and a short history of your previous decisions. Each decision you output
 targets; the arm then moves toward them for about half a second before the next image is taken, so
 compare the reached joints with what you asked for.
 
-Task: pick up the TARGET orange and put it on the plate. The target is the right-hand one of the two
-oranges visible at the start (the one farther from the plate, about 30 cm in front of the base and
-slightly to the right of the arm's centre line). The task counts as done when that orange rests on
-the plate; the other oranges can stay where they are.
+Task: pick up the TARGET orange and put it on the plate. The target is the left-hand one of the two
+oranges visible at the start: the one nearest the plate, about 17 cm from the plate centre and about
+28 cm in front of the base. The task counts as done when that orange rests on the plate; the other
+oranges can stay where they are.
 
 Joint values are LeRobot motor units: -100 .. 100 per joint (roughly degrees), gripper 0 = closed ..
 100 = open. Each joint may move at most 25 units per decision; larger steps are clipped.
@@ -107,8 +107,8 @@ JOINT_GUIDE = """- shoulder_pan: positive swings the whole arm toward the plate 
 At the start (all joints 0) the arm stands upright under the camera and hides the third orange, which
 lies on the counter just in front of the base. Verified example: shoulder_pan 0, shoulder_lift 55,
 elbow_flex 20, wrist_flex 60 puts the open gripper tip on the counter about 30 cm in front of the base,
-between the two visible oranges; shoulder_pan about +12 aims at the left orange, about -10 at the
-target (right) orange. When the gripper presses on the counter the reached joints stay below the
+between the two visible oranges; shoulder_pan about +12 aims at the target (left) orange, about -10
+at the right one. When the gripper presses on the counter the reached joints stay below the
 commanded ones."""
 
 
