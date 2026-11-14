@@ -413,6 +413,8 @@ selectable = [p for p in policies if str(p.get("status")).lower() in ("full", "s
               and (_resolve(p.get("local_csv")) or _resolve(p.get("deploy_csv")))]
 
 st.title("GapHunter")
+st.page_link("pages/1_Compare.py", label="Compare policies: success against one parameter, every trial with its clip, "
+             "the success-probability field", icon=None)
 st.markdown('<p class="gh-sub">The goal of any robotics firm is to deploy a system with four-nines reliability '
             'as cheaply as possible.</p>'
             '<div class="gh-pull"><b>141 local → 89 hidden.</b> Intrinsic AIC 2026: one policy, scored on our own '

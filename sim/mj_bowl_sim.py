@@ -43,7 +43,16 @@ def _ring_mesh() -> str:
                   (i1, j1, j3), (i1, j3, i3)]      # rim, facing up
     v = " ".join(f"{x:.5f} {y:.5f} {z:.5f}" for x, y, z in verts)
     f = " ".join(f"{a} {b} {c}" for a, b, c in faces)
-    return f'<asset><mesh name="bowl_ring" vertex="{v}" face="{f}"/></asset>'
+    # Matte materials: no specular highlight, so the flat floor reads as the same colour as the wall.
+    # The floor faces the light and would render brighter than the wall, so it carries the same colour at
+    # 65 % with less emission; both then read as one colour from the side camera.
+    def floor_rgba(c):
+        r, g, b, a = (float(v) for v in RGBA[c].split())
+        return f"{r * 0.65:.3f} {g * 0.65:.3f} {b * 0.65:.3f} {a:g}"
+    mats = "".join(f'<material name="bowl_{c}" rgba="{RGBA[c]}" specular="0" shininess="0" reflectance="0" emission="0.7"/>'
+                   f'<material name="bowl_floor_{c}" rgba="{floor_rgba(c)}" specular="0" shininess="0" reflectance="0" emission="0.3"/>'
+                   for c in COLOURS)
+    return f'<asset><mesh name="bowl_ring" vertex="{v}" face="{f}"/>{mats}</asset>'
 
 
 def _bowl_xml(colour, xy):
@@ -57,8 +66,8 @@ def _bowl_xml(colour, xy):
         walls.append(f'<geom type="box" pos="{(r + w) * math.cos(a):.5f} {(r + w) * math.sin(a):.5f} {FLOOR + h:.4f}" '
                      f'size="{w} {chord:.5f} {h:.4f}" euler="0 0 {math.degrees(a):.3f}" group="3" rgba="{RGBA[colour]}"/>')
     return f'''<body name="bowl_{colour}" pos="{xy[0]} {xy[1]} 0">
-      <geom type="cylinder" pos="0 0 {FLOOR / 2}" size="{r + 2 * w:.4f} {FLOOR / 2}" rgba="{RGBA[colour]}"/>
-      <geom type="mesh" mesh="bowl_ring" contype="0" conaffinity="0" rgba="{RGBA[colour]}"/>
+      <geom type="cylinder" pos="0 0 {FLOOR / 2}" size="{r + 2 * w:.4f} {FLOOR / 2}" material="bowl_floor_{colour}"/>
+      <geom type="mesh" mesh="bowl_ring" contype="0" conaffinity="0" material="bowl_{colour}"/>
       {chr(10).join(walls)}
     </body>'''
 
