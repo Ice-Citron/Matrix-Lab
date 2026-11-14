@@ -22,7 +22,7 @@ CLIP_FPS, CLIP_MAX_SECONDS = 15, 10.0
 MIN_CLIP_BYTES = 50_000
 
 
-class _WallTimeout(Exception):
+class _WallTimeout(BaseException):  # not Exception: policies and model-call retries must not swallow it
     pass
 
 
