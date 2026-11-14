@@ -33,7 +33,7 @@ are already written in `results/policies/`):
 git clone https://github.com/Ice-Citron/gaphunter.git && cd gaphunter
 python3.12 -m venv .venv
 .venv/bin/pip install numpy==2.5.4 scipy==1.18.1 pandas==3.0.6 matplotlib==3.11.2 \
-  streamlit==1.66.0 imageio==2.38.1 imageio-ffmpeg==0.6.0 mujoco==3.16.0
+  streamlit==1.66.0 imageio==2.38.1 imageio-ffmpeg==0.6.0 mujoco==3.16.0 mcap-ros2-support==0.6.0
 git clone --filter=blob:none --sparse https://github.com/google-deepmind/mujoco_menagerie.git third_party/mujoco_menagerie
 git -C third_party/mujoco_menagerie sparse-checkout set universal_robots_ur5e
 git -C third_party/mujoco_menagerie checkout 62ab00f
@@ -66,7 +66,7 @@ sim/          Simulator backends behind run_trial: MuJoCo peg-in-hole (mj_sim.py
 runner/       Sampling (sample.py), batch runner (batch.py), refinement pass (refine.py),
               policy registry (policies.py), fake sim (fake.py)
 analysis/     Coverage report and heatmaps (coverage.py), docs and page builders (fill_docs.py, site.py, flow.py)
-app/          Streamlit app (streamlit_app.py)
+app/          Streamlit app (streamlit_app.py; pages/1_Compare.py is the policy comparison page)
 results/      Trial CSVs, policies.json, written policies (policies/), clips/, transcripts/
 docs/         GitHub Pages: demo (flow.html), project page (index.html), README template
 Makefile      make demo / make docs

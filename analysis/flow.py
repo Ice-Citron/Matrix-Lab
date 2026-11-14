@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "flow.html"
 ASSETS = ROOT / "docs" / "assets" / "flow"
 BINS = 16  # the ±0.05 m local box spans 4×4 cells of the ±0.20 m deployment box
-TASK_OF_SIM = {"mujoco": "peg", "ditto": "sphere", "sort": "sort"}
+TASK_OF_SIM = {"mujoco": "peg", "ditto": "sphere", "sort": "sort", "bowl": "bowl"}
 
 
 def _ditto_boxes() -> tuple[dict, dict]:
@@ -68,11 +68,16 @@ PLACEHOLDERS = [
 
 
 def _copy(rel: str) -> str | None:
-    src = ROOT / rel
-    if not rel or not src.is_file():
+    """Copy a results/ clip into the page assets; a clip committed under docs/assets/flow/clips alone (the
+    per-trial peg clips rendered for the page) is kept and referenced when results/ no longer holds it."""
+    if not rel:
         return None
+    src = ROOT / rel
     (ASSETS / "clips").mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, ASSETS / "clips" / src.name)
+    if src.is_file():
+        shutil.copyfile(src, ASSETS / "clips" / src.name)
+    elif not (ASSETS / "clips" / src.name).is_file():
+        return None
     return f"assets/flow/clips/{src.name}"
 
 
@@ -97,6 +102,7 @@ def _criteria() -> dict:
     return {"peg": {"depth_mm": num("SUCCESS_DEPTH") * 1000, "lateral_mm": num("SUCCESS_LATERAL") * 1000,
                     "force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS"))},
             "sort": {"force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS"))},  # mj_sort_sim imports both
+            "bowl": {"force_N": num("COLLISION_N"), "api_calls": int(num("MAX_API_CALLS"))},  # same cell, round bowls
             "sphere": {"lift_progress": 0.3}}
 
 
@@ -166,7 +172,7 @@ def _policy(pol: dict, lb: dict, db: dict, feat: dict) -> dict:
             clip = r.get("clip") if isinstance(r.get("clip"), str) else None
             if clip is None and sim == "mujoco":  # clip rendered after the sweep: named by param hash
                 hashed = f"results/clips/{param_hash(r)}.mp4"
-                clip = hashed if (ROOT / hashed).is_file() else None
+                clip = hashed if (ROOT / hashed).is_file() or (ASSETS / "clips" / Path(hashed).name).is_file() else None
             if clip and (url := _copy(clip)):
                 c = len(clips)
                 clips.append({"url": url, "mode": mode or "success", "dx": round(float(r["dx"]), 3),
@@ -197,17 +203,15 @@ def build(readme: Path | None = None) -> Path:
     lb0, db0 = default_boxes()
     dl, dd = _ditto_boxes()
     sd = sort_deploy_box()  # bin sorting reuses lb0 as its local box
-    deploy_of = {"ditto": dd, "sort": sd}
+    deploy_of = {"ditto": dd, "sort": sd, "bowl": sd}  # cube-in-bowl shares the bin-sorting boxes
     boxes = _local_boxes()
     feat = json.loads((ROOT / "results/featured.json").read_text())
-    if ASSETS.exists():
-        shutil.rmtree(ASSETS)
-    ASSETS.mkdir(parents=True)
+    ASSETS.mkdir(parents=True, exist_ok=True)  # clips already committed under assets are kept, see _copy
     pols = []
     for pol in load_policies("results/policies.json", root=str(ROOT)):
         sim = pol.get("sim") or "mujoco"
         pols.append(_policy(pol, boxes.get(pol["policy"], dl if sim == "ditto" else lb0),
-                            dd if sim == "ditto" else db0, feat))
+                            deploy_of.get(sim, db0), feat))
     # Same policy run on another task: committed results/<sim>_<policy>_{local,deploy}.csv that policies.json
     # does not reference (it holds one row per policy name). Shown as "<policy> (<task>)".
     listed = {pol.get(k) for pol in load_policies("results/policies.json", root=str(ROOT))
@@ -252,7 +256,8 @@ def build(readme: Path | None = None) -> Path:
     data = {"policies": pols, "bins": BINS, "criteria": _criteria(),
             "tasks": {"peg": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(db0)},
                       "sphere": {"local": _box_json(dl), "deploy": _box_json(dd)},
-                      "sort": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(sd)}},
+                      "sort": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(sd)},
+                      "bowl": {"local": _box_json(fold_box(lb0)), "deploy": _box_json(sd)}},
             "table": {"cols": POLICY_COLUMNS, "rows": [[str(r[c]) for c in POLICY_COLUMNS]
                                                          for _, r in table.iterrows()]}}
     OUT.write_text(PAGE.replace("/*DATA*/", json.dumps(data, separators=(",", ":"))))
