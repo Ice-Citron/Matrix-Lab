@@ -22,7 +22,7 @@ PARAMS = {"dx": "dx (m)", "dy": "dy (m)", "yaw": "yaw (deg)", "r": "distance fro
           "pose_error_mm": "camera error on the first estimate (mm)",
           "bx": "basket dx (m)", "by": "basket dy (m)"}
 PLACEMENT = ("dx", "dy", "yaw", "bx", "by")  # the sampled placement parameters
-TAG_RE = re.compile(r"_(cmp_smoke|cmp_pilot|(?:local|deploy)(?:_v\d+\w*)?(?:_fresh|_invalid)?)$")
+TAG_RE = re.compile(r"_(cmp_smoke|cmp_pilot|dr|(?:local|deploy)(?:_v\d+\w*)?(?:_fresh|_invalid)?)$")
 NOMINAL = {"mujoco": (0.45, 0.0), "sort": (0.45, -0.05)}
 
 
@@ -62,7 +62,8 @@ def load_trials() -> pd.DataFrame:
         df["failure_mode"] = df["failure_mode"].fillna("").astype(str)
         df["outcome"] = np.where(df["success"], "success", df["failure_mode"].replace("", "failure"))
         df["sim"], df["task"], df["policy"], df["tag"] = sim, TASK[sim], policy, tag
-        df["set"] = "local" if tag.startswith("local") else "deploy" if tag.startswith("deploy") else tag[4:]
+        df["set"] = ("local" if tag.startswith("local") else "deploy" if tag.startswith("deploy")
+                     else tag[4:] if tag.startswith("cmp_") else tag)
         df["r"] = np.hypot(df["dx"].astype(float), df["dy"].astype(float))
         df["csv"] = str(path.relative_to(ROOT))
         frames.append(df)
