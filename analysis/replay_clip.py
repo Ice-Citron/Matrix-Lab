@@ -23,7 +23,7 @@ def replay(path: Path) -> str:
     t = json.loads(path.read_text())
     params = t["params"]
     outcome = t.get("outcome") or {}
-    bowl = path.name.startswith("bowl-") or "target_bowl" in outcome
+    bowl = path.name.startswith("bowl-") or outcome.get("colour") in ("cream", "grey", "black")
     sort = path.name.startswith("sort-") or "colour" in outcome
     sim = (BowlSim if bowl else SortSim if sort else PegSim)(params, record_every=20)
     try:
@@ -38,7 +38,7 @@ def replay(path: Path) -> str:
             elif s["api"] == "bin_pose":
                 sim.bin_pose(args["colour"])
             elif s["api"] == "bowl_pose":
-                sim.bowl_pose(args["bowl"])
+                sim.bowl_pose(args["colour"])
             else:
                 getattr(sim, s["api"])()
     except (ApiCapReached, CollisionStop):

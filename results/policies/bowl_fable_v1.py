@@ -1,95 +1,88 @@
 import math
 
-SAFE_Z = 0.22          # transport height for the pad centre
-CUBE = 0.04
-TARGET = {"red": "cream", "green": "grey", "blue": "black"}
-MAX_CALLS = 300
+CUBE = 0.040  # cube edge, m
 
 
-class _Budget(Exception):
-    pass
+def _median(vals):
+    s = sorted(vals)
+    return s[len(s) // 2]
+
+
+def _observe_cube(api, n=3):
+    xs, ys, zs, yaws, cols = [], [], [], [], []
+    for _ in range(n):
+        (x, y, z), yaw, col = api.cube_pose()
+        xs.append(x); ys.append(y); zs.append(z); yaws.append(yaw); cols.append(col)
+    colour = max(set(cols), key=cols.count)
+    return (_median(xs), _median(ys), _median(zs)), _median(yaws), colour
+
+
+def _line(api, p0, p1, yaw, step):
+    """Move from p0 to p1 in short Cartesian segments (move_to is joint-space)."""
+    d = math.sqrt(sum((b - a) ** 2 for a, b in zip(p0, p1)))
+    n = max(1, int(math.ceil(d / step)))
+    for i in range(1, n + 1):
+        t = i / float(n)
+        api.move_to((p0[0] + (p1[0] - p0[0]) * t,
+                     p0[1] + (p1[1] - p0[1]) * t,
+                     p0[2] + (p1[2] - p0[2]) * t), yaw)
+    return p1
+
+
+def _attempt(api):
+    (cx, cy, ctop), cyaw, colour = _observe_cube(api)
+    (bx, by, brim), _ = api.bowl_pose(colour)
+
+    rim_max = brim
+    for c in ("cream", "grey", "black"):
+        try:
+            rim_max = max(rim_max, api.bowl_pose(c)[0][2])
+        except Exception:
+            pass
+
+    # pad height at which a held cube clears every rim comfortably
+    travel_z = max(rim_max, ctop) + CUBE + 0.07
+    yaw = cyaw
+
+    # ---- pick ----
+    api.suction(False)
+    pos = (cx, cy, travel_z)
+    api.move_to(pos, yaw)
+    pos = _line(api, pos, (cx, cy, ctop + 0.03), yaw, 0.05)
+    held = False
+    for dz in (0.002, 0.0005, -0.001, -0.002, -0.003):
+        pos = (cx, cy, ctop + dz)
+        api.move_to(pos, yaw)
+        if api.suction(True):
+            held = True
+            break
+    if not held:
+        api.suction(False)
+        _line(api, pos, (cx, cy, travel_z), yaw, 0.05)
+        return False
+
+    # ---- lift, carry, lower ----
+    pos = _line(api, pos, (cx, cy, travel_z), yaw, 0.04)
+    pos = _line(api, pos, (bx, by, travel_z), yaw, 0.05)
+
+    floor_z = max(0.0, brim - 0.040)
+    release_z = floor_z + CUBE + 0.008
+    pos = _line(api, pos, (bx, by, release_z), yaw, 0.04)
+
+    api.suction(False)
+    _line(api, pos, (bx, by, travel_z), yaw, 0.06)
+    return True
 
 
 def run(api):
-    state = {"n": 0, "pos": None}
-
-    def tick(reserve=0):
-        if state["n"] + 1 + reserve > MAX_CALLS:
-            raise _Budget()
-        state["n"] += 1
-
-    def raw_move(p, yaw):
-        tick(reserve=2)
-        api.move_to((p[0], p[1], p[2]), yaw)
-        state["pos"] = (p[0], p[1], p[2])
-
-    def move(p, yaw, step=0.08):
-        """Cartesian-ish move: split into short segments so the joint-space path stays near a line."""
-        s = state["pos"]
-        if s is None:
-            raw_move(p, yaw)
-            return
-        d = math.sqrt(sum((p[i] - s[i]) ** 2 for i in range(3)))
-        n = max(1, int(math.ceil(d / step)))
-        for k in range(1, n + 1):
-            t = k / float(n)
-            raw_move(tuple(s[i] + (p[i] - s[i]) * t for i in range(3)), yaw)
-
-    def suction(on):
-        tick(reserve=1)
-        return api.suction(on)
-
-    def is_done():
-        tick()
-        return api.done()
-
-    def attempt():
-        tick()
-        (cx, cy, ctop), cyaw, colour = api.cube_pose()
-        bowl = TARGET.get(colour, "grey")
-        tick()
-        (bx, by, brim), _ = api.bowl_pose(bowl)
-
-        yaw = cyaw
-        # go above the cube at safe height (lift straight up first if we are low)
-        if state["pos"] is not None and state["pos"][2] < SAFE_Z - 1e-4:
-            move((state["pos"][0], state["pos"][1], SAFE_Z), yaw, 0.04)
-        move((cx, cy, SAFE_Z), yaw)
-        suction(False)
-        # descend close to the top face
-        move((cx, cy, ctop + 0.03), yaw, 0.04)
-        held = False
-        for dz in (0.004, 0.002, 0.001, 0.0, -0.001, -0.002):
-            raw_move((cx, cy, ctop + dz), yaw)
-            if suction(True):
-                held = True
-                break
-        if not held:
-            suction(False)
-            move((cx, cy, SAFE_Z), yaw, 0.04)
-            return False
-
-        # lift, carry, lower into the bowl
-        move((cx, cy, SAFE_Z), yaw, 0.03)
-        move((bx, by, SAFE_Z), yaw, 0.07)
-        floor = max(0.0, brim - 0.04)
-        z_rel = floor + CUBE + 0.012
-        move((bx, by, z_rel), yaw, 0.03)
-        suction(False)
-        move((bx, by, SAFE_Z), yaw, 0.04)
-        return True
-
+    for _ in range(4):
+        try:
+            if api.done():
+                return
+        except Exception:
+            pass
+        _attempt(api)
     try:
-        for _ in range(6):
-            if state["n"] > MAX_CALLS - 60:
-                break
-            attempt()
-            if is_done():
-                break
-    except _Budget:
-        pass
-    try:
-        if state["n"] < MAX_CALLS:
-            api.suction(False)
+        api.done()
     except Exception:
         pass

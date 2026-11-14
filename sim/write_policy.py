@@ -57,14 +57,13 @@ Reply with the complete module in a single ```python code block, followed by at 
 explaining the strategy."""
 
 
-BOWL_TASK = """You are writing the control policy for a cube-in-bowl cell.
+BOWL_TASK = """You are writing the control policy for a bin-sorting cell with round bowls.
 
-A UR5e arm has a suction cup pointing straight down. One 40 mm cube lies on the table; it is red, green or blue.
-Three round bowls stand on the table: cream, grey and black; each is a dish 120 mm across inside, with walls 40 mm high.
+A UR5e arm has a suction cup pointing straight down. One 40 mm cube lies on the table; it is cream, grey or black.
+Three round bowls stand on the table, one per colour; each is a dish with a flat floor, 120 mm across inside, with walls 40 mm high.
 In our test cell the cube is placed at x = 0.45 +/- 0.05 m, y = -0.05 +/- 0.05 m, yaw = 0 +/- 15 degrees.
 The bowls are fixed at cream (0.25, 0.30), grey (0.45, 0.30) and black (0.65, 0.30).
-The red cube belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl.
-The trial succeeds when the cube rests inside its own bowl with the suction off.
+The trial succeeds when the cube rests inside the bowl of its own colour with the suction off.
 
 Write a Python module that defines `def run(api):`. It is called once per trial and must return when
 finished. `api` is the module below; use only these five functions (plus `math`, which you may import).

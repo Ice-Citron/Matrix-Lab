@@ -52,12 +52,12 @@ POLICIES = [
     {"policy": "molmoact2", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK, "sim": "ditto",
      "local_box": DITTO_LOCAL_BOX, "notes": "Native MolmoAct2-DROID checkpoint, 15 Hz, 450 steps."},
     {"policy": "astra-script-bowl", "family": "LLM-written policy code", "model": "gpt-6-astra",
-     "task": "cube-in-bowl, UR5e (round cream/grey/black bowls)", "sim": "bowl", "local_box": local_box(),
+     "task": "bin sorting into round bowls, UR5e (cream, grey, black)", "sim": "bowl", "local_box": local_box(),
      "local_csv": "results/bowl_astra-script_local.csv", "deploy_csv": "results/bowl_astra-script_deploy.csv",
      "notes": "Astra writes policy.py once (results/policies/bowl_astra_v1.py) for the bin-sorting cell with "
-              "the three round 3D-printed bowls of the real SO-101 cell; code unedited."},
+              "the three round 3D-printed bowls of the real SO-101 cell and a cube of the same three colours; code unedited."},
     {"policy": "fable-script-bowl", "family": "LLM-written policy code", "model": "claude-fable-5-2",
-     "task": "cube-in-bowl, UR5e (round cream/grey/black bowls)", "sim": "bowl", "local_box": local_box(),
+     "task": "bin sorting into round bowls, UR5e (cream, grey, black)", "sim": "bowl", "local_box": local_box(),
      "local_csv": "results/bowl_fable-script_local.csv", "deploy_csv": "results/bowl_fable-script_deploy.csv",
      "notes": "Fable 5.2 writes policy.py once (results/policies/bowl_fable_v1.py) from the same prompt and API "
               "docstrings as Astra; code unedited."},

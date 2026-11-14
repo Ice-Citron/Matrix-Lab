@@ -17,7 +17,7 @@ from analysis.coverage import _drop_infra, _success, first_pass
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
-TASK = {"mujoco": "peg-in-hole", "sort": "bin-sorting", "bowl": "cube-in-bowl", "ditto": "sphere-in-basket",
+TASK = {"mujoco": "peg-in-hole", "sort": "bin-sorting", "bowl": "bowl-sorting", "ditto": "sphere-in-basket",
         "isaac": "orange-in-bowl"}
 PARAMS = {"dx": "dx (m)", "dy": "dy (m)", "yaw": "yaw (deg)", "r": "distance from nominal (m)",
           "pose_error_mm": "camera error on the first estimate (mm)",

@@ -1,11 +1,10 @@
-"""The five functions a cube-in-bowl policy may call. A policy is `def run(api): ...` and receives this module.
+"""The five functions a sorting policy may call. A policy is `def run(api): ...` and receives this module.
 
 Units: metres and degrees in the world frame; z is up and the table top is z = 0.
 The robot has a suction cup pointing straight down. The centre of its 28 x 28 mm square pad is the controlled
-point. One 40 mm cube lies on the table; its colour is red, green or blue. Three round bowls stand on the table:
-cream, grey and black. Each bowl is a round dish 120 mm across inside, with 40 mm high walls. The red cube
-belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl. The trial
-succeeds when the cube rests inside its own bowl with the suction off.
+point. One 40 mm cube lies on the table; its colour is cream, grey or black. Three round bowls stand on the
+table, one per colour. Each bowl is a dish with a flat floor, 120 mm across inside, with 40 mm high walls.
+The trial succeeds when the cube rests inside the bowl of its own colour with the suction off.
 """
 from __future__ import annotations
 
@@ -15,14 +14,14 @@ _SIM = None  # set by the trial runner
 def cube_pose():
     """Camera estimate of the cube: returns ((x, y, z_top_face), yaw_deg, colour).
     Yaw is the rotation of the cube about z, reported in [-45, 45) because a square repeats every 90 degrees.
-    colour is "red", "green" or "blue"."""
+    colour is "cream", "grey" or "black"."""
     return _SIM.cube_pose()
 
 
-def bowl_pose(bowl):
-    """Camera estimate of the bowl ("cream", "grey" or "black"): returns ((x, y, z_rim), yaw_deg).
+def bowl_pose(colour):
+    """Camera estimate of the bowl for colour ("cream", "grey" or "black"): returns ((x, y, z_rim), yaw_deg).
     (x, y) is the centre of the bowl floor; z_rim is the height of the top of its wall."""
-    return _SIM.bowl_pose(bowl)
+    return _SIM.bowl_pose(colour)
 
 
 def move_to(xyz, yaw_deg):
@@ -40,5 +39,5 @@ def suction(on):
 
 
 def done():
-    """True if the cube rests inside the bowl that matches its colour (each bowl has a load cell)."""
+    """True if the cube rests inside the bowl of its own colour (each bowl has a load cell)."""
     return _SIM.done()

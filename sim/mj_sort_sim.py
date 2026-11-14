@@ -35,8 +35,8 @@ N_ARM = 6
 LIFTED_Z = CUBE_HALF + 0.02  # cube centre this high counts as lifted
 
 
-def colour_of(params: dict) -> str:
-    return COLOURS[int(params["seed"]) % 3]
+def colour_of(params: dict, colours=COLOURS) -> str:
+    return colours[int(params["seed"]) % 3]
 
 
 def bin_offset(params: dict, colour: str) -> np.ndarray:
@@ -64,8 +64,10 @@ def _bin_xml(colour, xy):
     </body>'''
 
 
-def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunter bin sorting") -> mujoco.MjModel:
-    """The scene; `fixtures` replaces the three bins (sim.mj_bowl_sim passes round bowls)."""
+def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunter bin sorting",
+                colours=COLOURS, rgba=RGBA, assets: str = "") -> mujoco.MjModel:
+    """The scene; `fixtures` replaces the three bins and `colours`/`rgba` the cube colours
+    (sim.mj_bowl_sim passes round cream, grey and black bowls and a cube of the same three colours)."""
     arm = (UR5E / "ur5e.xml").read_text()
     arm = arm.replace('meshdir="assets"', f'meshdir="{UR5E / "assets"}"')
     arm = arm[:arm.index("<keyframe>")] + arm[arm.index("</keyframe>") + len("</keyframe>"):]  # nq changes
@@ -80,7 +82,7 @@ def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunt
                   <site name="attachment_site"'''
     arm = arm.replace('<site name="attachment_site"', cup, 1)
     body = arm[arm.index(">", arm.index("<mujoco")) + 1: arm.rindex("</mujoco>")]
-    colour = colour_of(params)
+    colour = colour_of(params, colours)
     cx, cy = NOMINAL_CUBE + (params["dx"], params["dy"])
     (tx0, tx1), (ty0, ty1) = TABLE
     bins = fixtures if fixtures is not None else "\n".join(
@@ -88,6 +90,7 @@ def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunt
     side_pos = (1.15, -0.55, 0.75)
     xml = f'''<mujoco model="{title}">
   {body}
+  {assets}
   <visual><global offwidth="640" offheight="480"/></visual>
   <worldbody>
     <light pos="0.45 0 1.5" dir="0 0 -1" directional="true"/>
@@ -97,7 +100,7 @@ def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunt
     {bins}
     <body name="cube" pos="{cx} {cy} {CUBE_HALF}" euler="0 0 {math.radians(params["yaw"])}">
       <freejoint/>
-      <geom name="cube" type="box" size="{CUBE_HALF} {CUBE_HALF} {CUBE_HALF}" rgba="{RGBA[colour]}"
+      <geom name="cube" type="box" size="{CUBE_HALF} {CUBE_HALF} {CUBE_HALF}" rgba="{rgba[colour]}"
             mass="0.05" friction="1"/>
     </body>
     <camera name="side" pos="{' '.join(map(str, side_pos))}" xyaxes="{_look(side_pos, (0.42, 0.12, 0.0))}"/>
@@ -110,7 +113,7 @@ def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunt
 class SortSim:
     def __init__(self, params: dict, record_every: int = 0):
         self.params = dict(params)
-        self.colour = colour_of(params)
+        self.colour = self.colour_of(params)
         self.model = self.build(params)
         self.data = mujoco.MjData(self.model)
         self.scratch = mujoco.MjData(self.model)
@@ -139,6 +142,9 @@ class SortSim:
 
     def build(self, params: dict) -> mujoco.MjModel:
         return build_model(params)
+
+    def colour_of(self, params: dict) -> str:
+        return colour_of(params)
 
     # ---------------------------------------------------------------- ground truth
     def cube_true(self):
