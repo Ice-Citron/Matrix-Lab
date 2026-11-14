@@ -57,6 +57,27 @@ Reply with the complete module in a single ```python code block, followed by at 
 explaining the strategy."""
 
 
+BOWL_TASK = """You are writing the control policy for a cube-in-bowl cell.
+
+A UR5e arm has a suction cup pointing straight down. One 40 mm cube lies on the table; it is red, green or blue.
+Three round bowls stand on the table: cream, grey and black; each is a dish 120 mm across inside, with walls 60 mm high.
+In our test cell the cube is placed at x = 0.45 +/- 0.05 m, y = -0.05 +/- 0.05 m, yaw = 0 +/- 15 degrees.
+The bowls are fixed at cream (0.25, 0.30), grey (0.45, 0.30) and black (0.65, 0.30).
+The red cube belongs in the cream bowl, the green cube in the grey bowl and the blue cube in the black bowl.
+The trial succeeds when the cube rests inside its own bowl with the suction off.
+
+Write a Python module that defines `def run(api):`. It is called once per trial and must return when
+finished. `api` is the module below; use only these five functions (plus `math`, which you may import).
+You have at most 300 API calls per trial. Contact force on the pad above 150 N aborts the trial as a collision.
+
+```python
+{api_source}
+```
+
+Reply with the complete module in a single ```python code block, followed by at most three sentences
+explaining the strategy."""
+
+
 def _env():
     env = {}
     for line in CREDENTIALS.read_text().splitlines():
@@ -119,8 +140,8 @@ def ask_opus(prompt: str) -> tuple[str, dict]:
 
 
 def main(version: str = "v1", task: str = "peg"):
-    from sim import api, sort_api
-    module, template = (sort_api, SORT_TASK) if task == "sort" else (api, TASK)
+    from sim import api, bowl_api, sort_api
+    module, template = {"sort": (sort_api, SORT_TASK), "bowl": (bowl_api, BOWL_TASK)}.get(task, (api, TASK))
     prompt = template.replace("{api_source}", inspect.getsource(module))
     ask = ask_opus if MODEL.startswith("claude") else ask_astra
     text, meta = ask(prompt)

@@ -26,6 +26,9 @@ def run_trial(params: dict, render: bool = False) -> TrialResult:
     if backend == "sort":
         from sim.mj_sort_trial import run_sort_trial
         return run_sort_trial(params, render=render)
+    if backend == "bowl":
+        from sim.mj_bowl_trial import run_bowl_trial
+        return run_bowl_trial(params, render=render)
     if backend == "ditto":
         from sim.ditto_trial import run_ditto_trial
         return run_ditto_trial(params, render=render)

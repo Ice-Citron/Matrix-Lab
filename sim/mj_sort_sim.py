@@ -64,7 +64,8 @@ def _bin_xml(colour, xy):
     </body>'''
 
 
-def build_model(params: dict) -> mujoco.MjModel:
+def build_model(params: dict, fixtures: str | None = None, title: str = "gaphunter bin sorting") -> mujoco.MjModel:
+    """The scene; `fixtures` replaces the three bins (sim.mj_bowl_sim passes round bowls)."""
     arm = (UR5E / "ur5e.xml").read_text()
     arm = arm.replace('meshdir="assets"', f'meshdir="{UR5E / "assets"}"')
     arm = arm[:arm.index("<keyframe>")] + arm[arm.index("</keyframe>") + len("</keyframe>"):]  # nq changes
@@ -82,9 +83,10 @@ def build_model(params: dict) -> mujoco.MjModel:
     colour = colour_of(params)
     cx, cy = NOMINAL_CUBE + (params["dx"], params["dy"])
     (tx0, tx1), (ty0, ty1) = TABLE
-    bins = "\n".join(_bin_xml(c, NOMINAL_BINS[c] + bin_offset(params, c)) for c in COLOURS)
+    bins = fixtures if fixtures is not None else "\n".join(
+        _bin_xml(c, NOMINAL_BINS[c] + bin_offset(params, c)) for c in COLOURS)
     side_pos = (1.15, -0.55, 0.75)
-    xml = f'''<mujoco model="gaphunter bin sorting">
+    xml = f'''<mujoco model="{title}">
   {body}
   <visual><global offwidth="640" offheight="480"/></visual>
   <worldbody>
@@ -109,7 +111,7 @@ class SortSim:
     def __init__(self, params: dict, record_every: int = 0):
         self.params = dict(params)
         self.colour = colour_of(params)
-        self.model = build_model(params)
+        self.model = self.build(params)
         self.data = mujoco.MjData(self.model)
         self.scratch = mujoco.MjData(self.model)
         self.rng = np.random.default_rng(int(params["seed"]))
@@ -134,6 +136,9 @@ class SortSim:
         self._settle(400)
         # start 15 cm above the nominal cube
         self._goto(np.array([*NOMINAL_CUBE, 0.15]), 0.0)
+
+    def build(self, params: dict) -> mujoco.MjModel:
+        return build_model(params)
 
     # ---------------------------------------------------------------- ground truth
     def cube_true(self):

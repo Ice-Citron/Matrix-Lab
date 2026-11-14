@@ -16,12 +16,13 @@ from sim.mj_trial import MIN_CLIP_BYTES, RESULTS, ROOT, WALL_LIMIT_S, _WallTimeo
 POLICY_VERSION = os.environ.get("GAPHUNTER_POLICY", "sort_astra_v1")
 
 
-def sort_hash(params: dict) -> str:
+def sort_hash(params: dict, prefix: str = "sort-") -> str:
     """'sort-' + sha1 of the policy and every param. The prefix keeps sort artifacts apart from peg and Ditto
-    ones; the policy name keeps two policies run on the same params from overwriting each other."""
+    ones (and 'bowl-' the cube-in-bowl ones); the policy name keeps two policies run on the same params from
+    overwriting each other."""
     canon = {k: int(v) if k == "seed" else float(v) for k, v in params.items()}
     canon["policy"] = POLICY_VERSION
-    return "sort-" + hashlib.sha1(json.dumps(canon, sort_keys=True).encode()).hexdigest()
+    return prefix + hashlib.sha1(json.dumps(canon, sort_keys=True).encode()).hexdigest()
 
 
 def _load_policy():
@@ -37,12 +38,13 @@ def _exchange():
     return json.loads(path.read_text()) if path.exists() else None
 
 
-def run_sort_trial(params: dict, render: bool = False):
+def run_sort_trial(params: dict, render: bool = False, sim_cls=SortSim, api=sort_api, prefix: str = "sort-"):
     from sim.trial import TrialResult
 
     t0 = time.time()
-    h = sort_hash(params)
-    sim = SortSim(params, record_every=20 if render else 0)
+    h = sort_hash(params, prefix)
+    sim = sim_cls(params, record_every=20 if render else 0)
+    sort_api = api  # noqa: F841 - the module whose _SIM the policy calls through
     sort_api._SIM = sim
     mode, error, policy = "", None, None
 

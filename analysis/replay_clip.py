@@ -13,6 +13,7 @@ import math
 import sys
 from pathlib import Path
 
+from sim.mj_bowl_sim import BowlSim
 from sim.mj_sim import ApiCapReached, CollisionStop, PegSim
 from sim.mj_sort_sim import SortSim
 from sim.mj_trial import ROOT, _write_clip
@@ -21,8 +22,10 @@ from sim.mj_trial import ROOT, _write_clip
 def replay(path: Path) -> str:
     t = json.loads(path.read_text())
     params = t["params"]
-    sort = path.name.startswith("sort-") or "colour" in (t.get("outcome") or {})
-    sim = (SortSim if sort else PegSim)(params, record_every=20)
+    outcome = t.get("outcome") or {}
+    bowl = path.name.startswith("bowl-") or "target_bowl" in outcome
+    sort = path.name.startswith("sort-") or "colour" in outcome
+    sim = (BowlSim if bowl else SortSim if sort else PegSim)(params, record_every=20)
     try:
         for s in t["steps"]:
             args = s["args"]
@@ -34,6 +37,8 @@ def replay(path: Path) -> str:
                 sim.suction(args["on"])
             elif s["api"] == "bin_pose":
                 sim.bin_pose(args["colour"])
+            elif s["api"] == "bowl_pose":
+                sim.bowl_pose(args["bowl"])
             else:
                 getattr(sim, s["api"])()
     except (ApiCapReached, CollisionStop):

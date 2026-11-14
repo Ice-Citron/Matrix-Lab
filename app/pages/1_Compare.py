@@ -49,7 +49,7 @@ st.title("Compare")
 st.caption("Every number here comes from the committed csv files in results/: pass-1 rows, api_error rows dropped. "
            "Nothing is re-run.")
 
-tasks = [t for t in ("peg-in-hole", "bin-sorting", "sphere-in-basket", "orange-in-bowl") if t in set(df_all["task"])]
+tasks = [t for t in ("peg-in-hole", "bin-sorting", "cube-in-bowl", "sphere-in-basket", "orange-in-bowl") if t in set(df_all["task"])]
 task = st.radio("Task", tasks, horizontal=True)
 df_task = df_all[df_all["task"] == task]
 counts = df_task.groupby("policy").size()

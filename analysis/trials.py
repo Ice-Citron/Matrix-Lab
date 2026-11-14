@@ -17,13 +17,14 @@ from analysis.coverage import _drop_infra, _success, first_pass
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
-TASK = {"mujoco": "peg-in-hole", "sort": "bin-sorting", "ditto": "sphere-in-basket", "isaac": "orange-in-bowl"}
+TASK = {"mujoco": "peg-in-hole", "sort": "bin-sorting", "bowl": "cube-in-bowl", "ditto": "sphere-in-basket",
+        "isaac": "orange-in-bowl"}
 PARAMS = {"dx": "dx (m)", "dy": "dy (m)", "yaw": "yaw (deg)", "r": "distance from nominal (m)",
           "pose_error_mm": "camera error on the first estimate (mm)",
           "bx": "basket dx (m)", "by": "basket dy (m)"}
 PLACEMENT = ("dx", "dy", "yaw", "bx", "by")  # the sampled placement parameters
 TAG_RE = re.compile(r"_(cmp_smoke|cmp_pilot|dr|(?:local|deploy)(?:_v\d+\w*)?(?:_fresh|_invalid)?)$")
-NOMINAL = {"mujoco": (0.45, 0.0), "sort": (0.45, -0.05)}
+NOMINAL = {"mujoco": (0.45, 0.0), "sort": (0.45, -0.05), "bowl": (0.45, -0.05)}
 
 
 def _parse(path: Path) -> tuple[str, str, str] | None:
