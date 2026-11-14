@@ -64,7 +64,12 @@ POLICIES = [
     {"policy": "astra-live-so101", "family": "LLM closed-loop control", "model": "gpt-6-astra",
      "task": "orange-in-bowl, SO-101 (LeIsaac kitchen)", "sim": "isaac",
      "local_box": {"dx": (-0.03, 0.03), "dy": (-0.03, 0.03), "yaw": (-15.0, 15.0)},
-     "notes": "Astra drives the sim SO-101 live, joint-space targets, 25-decision cap."},
+     "notes": "Astra drives the sim SO-101 live, joint-space targets, 25-decision cap. Target Orange001, the far orange."},
+    {"policy": "astra-live-so101-o2", "family": "LLM closed-loop control", "model": "gpt-6-astra",
+     "task": "orange-in-bowl, SO-101 (LeIsaac kitchen)", "sim": "isaac",
+     "local_box": {"dx": (-0.03, 0.03), "dy": (-0.03, 0.03), "yaw": (-15.0, 15.0)},
+     "notes": "Same loop, target Orange002, the orange nearest the plate. Seven deploy placements that "
+              "started inside the plate box are excluded (results/..._deploy_invalid.csv)."},
     {"policy": "molmoact2", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK, "sim": "ditto",
      "local_box": DITTO_LOCAL_BOX, "notes": "Native MolmoAct2-DROID checkpoint, 15 Hz, 450 steps."},
 ]
