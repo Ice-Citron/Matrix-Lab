@@ -56,6 +56,11 @@ POLICIES = [
      "local_csv": "results/ditto_fable_live_cmp_smoke.csv",
      "notes": "Fable 5.2 drives the arm live through the Responses proxy, same harness and caps as opus-live. "
               "Three-trial smoke on the local box."},
+    {"policy": "fable-live-900", "family": "LLM closed-loop control", "model": "claude-fable-5-2",
+     "task": DITTO_TASK, "sim": "ditto", "local_box": DITTO_LOCAL_BOX,
+     "local_csv": "results/ditto_fable_live_900_cmp_pilot.csv",
+     "notes": "Same loop with a 900 control-step budget; the 15-decision cap (GAPHUNTER_DECISION_CAP) still "
+              "bound. Three-trial pilot on the local box."},
     # Domain randomisation on the sphere task: the sphere moves over the local box and the basket by up to
     # 10 cm (runner.sample.ditto_dr_box). One csv per policy over the same 64 Sobol placements, seed 8400000.
     {"policy": "molmoact2-dr", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK + ", basket moved",
