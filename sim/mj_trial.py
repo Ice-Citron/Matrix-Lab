@@ -17,6 +17,9 @@ from sim.mj_sim import ApiCapReached, CollisionStop, PegSim
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 POLICY_VERSION = os.environ.get("GAPHUNTER_POLICY", "v1")
+# Peg transcripts were named by params alone; these policies keep that name so their CSVs still resolve.
+# Every newer policy gets the policy name in front, so two policies on one placement cannot overwrite.
+LEGACY_POLICIES = {"v1", "v2", "v3", "v4", "opus_v1", "fable_v1", "fable_v2", "naive"}
 WALL_LIMIT_S = int(os.environ.get("GAPHUNTER_TRIAL_TIMEOUT_S", "60"))
 CLIP_FPS, CLIP_MAX_SECONDS = 15, 10.0
 MIN_CLIP_BYTES = 50_000
@@ -58,6 +61,8 @@ def run_mj_trial(params: dict, render: bool = False):
 
     t0 = time.time()
     h = param_hash(params)
+    if POLICY_VERSION not in LEGACY_POLICIES:
+        h = f"{POLICY_VERSION}-{h}"
     sim = PegSim(params, record_every=20 if render else 0)
     api._SIM = sim
     mode, error, policy = "", None, None
