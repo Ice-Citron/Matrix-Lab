@@ -1,6 +1,12 @@
 import math
 
+#rucha's code review 
+#purpose: thius file contains the policy and defines a run function which takes checks for success at each step.
+#this is the first version for astra
 
+
+#the strategy fdor this policy is that it first moves to a position above the sphere and then moves down to grasp the sphere 
+# then lifts sphere and moves to basket position and releases. it checks for success at each 
 def run(api):
     remaining = 60
 
