@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from runner.sample import deploy_box, local_box, sample_box, sort_deploy_box
+from runner.sample import deploy_box, ditto_dr_box, local_box, sample_box, sort_deploy_box
 
 #rucha's code review
 #purpose of this is to set the root path of the project and define the path for saving results.
@@ -38,6 +38,7 @@ RESULTS = ROOT / "results"
 COLUMNS = ["dx", "dy", "yaw", "seed", "success", "failure_mode", "n_decisions", "t_wall", "clip", "transcript",
            "pose_error_mm", "pass"]
 SAVE_EVERY = 10
+EXTRA_PARAMS = ("bx", "by")  # optional sample columns kept after pass
 
 try:
     from tqdm import tqdm
@@ -77,11 +78,13 @@ def _work(job: tuple[int, dict, bool]) -> tuple[int, dict]:
     row = {k: params.get(k) for k in ("dx", "dy", "yaw", "seed")}
     row.update({k: res.get(k) for k in COLUMNS[4:-1]})
     row["pass"] = 1
+    row.update({k: params[k] for k in EXTRA_PARAMS if k in params})  # e.g. basket offsets
     return i, row
 
 
 def _to_df(rows: dict[int, dict]) -> pd.DataFrame:
-    df = pd.DataFrame([rows[i] for i in sorted(rows)], columns=COLUMNS)
+    extra = [k for k in EXTRA_PARAMS if any(k in r for r in rows.values())]
+    df = pd.DataFrame([rows[i] for i in sorted(rows)], columns=COLUMNS + extra)
     df["success"] = df["success"].astype(bool)
     df["failure_mode"] = df["failure_mode"].fillna("")
     df[["clip", "transcript"]] = df[["clip", "transcript"]].astype(object)
@@ -134,9 +137,9 @@ def _render_failures(df: pd.DataFrame, k: int, force_fake: bool, tag: str, n_wor
 
 
 def run_batch(param_list, n_workers=4, render_failures=0, tag="run", force_fake=False, jitter=0.0,
-              progress=None) -> pd.DataFrame:
+              progress=None, render_all=False) -> pd.DataFrame:
     """progress(done, total) is called in the main process after each trial."""
-    jobs = [(i, p, False) for i, p in enumerate(param_list)]
+    jobs = [(i, p, render_all) for i, p in enumerate(param_list)]
     rows: dict[int, dict] = {}
     bar = tqdm(total=len(jobs), desc=tag) if tqdm else None
     with mp.get_context("spawn").Pool(n_workers, initializer=_init_worker, initargs=(force_fake, jitter)) as pool:
@@ -175,11 +178,12 @@ def summary(df: pd.DataFrame, tag: str = "") -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--box", choices=["local", "deploy", "sort_deploy"], default="local")
+    ap.add_argument("--box", choices=["local", "deploy", "sort_deploy", "ditto_dr"], default="local")
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--tag", default=None, help="CSV name; defaults to --box")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--render-failures", type=int, default=0)
+    ap.add_argument("--render-all", action="store_true", help="record a clip of every trial as it runs")
     ap.add_argument("--method", choices=["sobol", "uniform", "grid"], default="sobol")
     ap.add_argument("--seed", type=int, default=0, help="base seed; trial i gets seed + i")
     ap.add_argument("--fake", action="store_true", help="force runner.fake even if sim.trial imports")
@@ -198,11 +202,11 @@ def main() -> None:
         print(summary(df, tag))
         return
 
-    box = {"local": local_box, "deploy": deploy_box, "sort_deploy": sort_deploy_box}[a.box]()
+    box = {"local": local_box, "deploy": deploy_box, "sort_deploy": sort_deploy_box, "ditto_dr": ditto_dr_box}[a.box]()
     params = sample_box(box, a.n, method=a.method, seed=a.seed)
     t0 = time.time()
     df = run_batch(params, n_workers=a.workers, render_failures=a.render_failures, tag=tag,
-                   force_fake=a.fake, jitter=a.jitter)
+                   force_fake=a.fake, jitter=a.jitter, render_all=a.render_all)
     print(summary(df, tag))
     print(f"elapsed         {time.time() - t0:.1f} s -> {RESULTS / f'{tag}.csv'}")
 

@@ -63,9 +63,10 @@ colour = alt.Color("policy:N", scale=alt.Scale(domain=policies, range=PALETTE[:l
 st.header("Success against one parameter")
 st.caption("One parameter varies along the x axis. The other two are held near a value with the sliders: a trial "
            "counts only when both lie within the tolerance. Bands are Wilson 95 % intervals; hover for n.")
+available = [p for p in T.PARAMS if p in df_task and df_task[p].notna().any()]
 c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
-param = c1.radio("Vary", list(T.PARAMS), format_func=lambda p: T.PARAMS[p], horizontal=True)
-others = [p for p in ("dx", "dy", "yaw") if p != param]
+param = c1.radio("Vary", available, format_func=lambda p: T.PARAMS[p], horizontal=True)
+others = [p for p in T.PLACEMENT if p != param and p in available][:2]
 held = {}
 for col, p in zip((c2, c3), others):
     lo, hi = float(df_task[p].min()), float(df_task[p].max())
@@ -94,12 +95,17 @@ else:
 
 # ------------------------------------------------------------------ 2. the trials map
 st.header("Every trial")
-st.caption("Each dot is one trial placed at its dx, dy. Click a dot to see its clip, why it ended as it did, and "
+st.caption("Each dot is one trial placed at the two parameters you choose, such as the sphere offset or the basket "
+           "offset. Click a dot to see its clip, why it ended as it did, and "
            "the tool path. A clip that was never rendered is replayed from the transcript on the spot.")
 pts = df.assign(seed=df["seed"].astype(int)).reset_index(drop=True)
+axes = [p for p in T.PLACEMENT if p in available]
+a1, a2 = st.columns(2)
+x_param = a1.selectbox("x axis", axes, index=0, format_func=lambda p: T.PARAMS[p])
+y_param = a2.selectbox("y axis", axes, index=min(1, len(axes) - 1), format_func=lambda p: T.PARAMS[p])
 outcomes = [o for o in OUTCOME_COLOURS if o in set(pts["outcome"])]
 scatter = (alt.Chart(pts).mark_point(size=60, filled=True, opacity=0.85)
-           .encode(x=alt.X("dx:Q", title="dx (m)"), y=alt.Y("dy:Q", title="dy (m)"),
+           .encode(x=alt.X(f"{x_param}:Q", title=T.PARAMS[x_param]), y=alt.Y(f"{y_param}:Q", title=T.PARAMS[y_param]),
                    color=alt.Color("outcome:N", scale=alt.Scale(domain=outcomes, range=[OUTCOME_COLOURS[o] for o in outcomes])),
                    shape=alt.Shape("policy:N", scale=alt.Scale(domain=policies)),
                    tooltip=["policy", "set", "outcome", "seed", alt.Tooltip("dx:Q", format=".3f"),

@@ -32,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LRC = Path(os.environ.get("GAPHUNTER_LRC", ROOT / "llms-for-robot-control")).resolve()
 AGENT_JSON = ROOT / "sim" / os.environ.get("GAPHUNTER_DITTO_CONFIG", "agent.json")  # or molmoact2_ditto.json / pi05_ditto.json
+BASKET_KEYS = ("bx", "by")  # basket displacement, see sim.task_override
 ARTIFACT_PREFIX = f"ditto-{AGENT_JSON.stem}-"  # keeps Ditto clips/transcripts apart from MuJoCo ones with the same params
 RESULTS = ROOT / "results"
 RUNS = RESULTS / "runs"
@@ -44,6 +45,7 @@ CLIP_MAX_SIDE, CLIP_MAX_SECONDS = 320, 10.0
 def param_hash(params: dict) -> str:
     canon = {"dx": float(params["dx"]), "dy": float(params["dy"]), "yaw": float(params["yaw"]),
              "seed": int(params["seed"])}  # numpy scalars from pandas are not JSON-serialisable
+    canon.update({k: float(params[k]) for k in BASKET_KEYS if k in params})  # absent keys keep old hashes
     return hashlib.sha1(json.dumps(canon, sort_keys=True).encode()).hexdigest()
 
 
@@ -77,6 +79,7 @@ def _run_in_subprocess(params, render):
     t0 = time.time()
     clean = {"dx": float(params["dx"]), "dy": float(params["dy"]), "yaw": float(params["yaw"]),
              "seed": int(params["seed"])}
+    clean.update({k: float(params[k]) for k in BASKET_KEYS if k in params})
     cmd = [str(framework_python()), "-B", "-m", "sim.ditto_trial", json.dumps(clean)]
     if render:
         cmd.append("--render")
@@ -109,7 +112,7 @@ def _run_vla(params: dict, render: bool) -> dict:
     h = param_hash(params)
     out = RUNS / f"{h}-{AGENT_JSON.stem}-{int(t0)}"
     env = dict(os.environ)
-    env["GAPHUNTER_PARAMS"] = json.dumps({k: float(params[k]) for k in ("dx", "dy", "yaw")})
+    env["GAPHUNTER_PARAMS"] = json.dumps({k: float(params[k]) for k in ("dx", "dy", "yaw", *BASKET_KEYS) if k in params})
     env["GAPHUNTER_ROOT"] = str(ROOT)
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(ROOT / "sim" / "_inject"), env.get("PYTHONPATH"))))
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
@@ -306,7 +309,7 @@ def _run_in_process(params: dict, render: bool) -> dict:
     out = RUNS / f"{h}-{int(t0)}"
     if out.exists():
         shutil.rmtree(out)
-    os.environ["GAPHUNTER_PARAMS"] = json.dumps({k: float(params[k]) for k in ("dx", "dy", "yaw")})
+    os.environ["GAPHUNTER_PARAMS"] = json.dumps({k: float(params[k]) for k in ("dx", "dy", "yaw", *BASKET_KEYS) if k in params})
     os.environ["GAPHUNTER_ROOT"] = str(ROOT)
     argv = _framework_argv(params, out, render)
     inject = str(ROOT / "sim" / "_inject")

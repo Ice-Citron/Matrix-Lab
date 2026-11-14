@@ -31,12 +31,22 @@ def object_friction() -> float | None:
     return None if raw == "native" else float(raw)
 
 
+def _params() -> dict:
+    if OVERRIDE is not None:
+        return OVERRIDE
+    raw = os.environ.get(ENV_VAR)
+    return json.loads(raw) if raw else {}
+
+
 def current_offsets() -> tuple[float, float, float]:
-    params = OVERRIDE
-    if params is None:
-        raw = os.environ.get(ENV_VAR)
-        params = json.loads(raw) if raw else {}
+    params = _params()
     return float(params.get("dx", 0.0)), float(params.get("dy", 0.0)), float(params.get("yaw", 0.0))
+
+
+def basket_offsets() -> tuple[float, float]:
+    """Basket displacement in metres (domain randomisation of the fixture); zero when absent."""
+    params = _params()
+    return float(params.get("bx", 0.0)), float(params.get("by", 0.0))
 
 
 def apply_offsets(env, env_idx) -> None:
@@ -47,6 +57,19 @@ def apply_offsets(env, env_idx) -> None:
     from transforms3d.quaternions import qmult
 
     env.task_spec["gaphunter_object_friction"] = object_friction()  # None = Ditto's native value
+    bx, by = basket_offsets()
+    if bx != 0.0 or by != 0.0:
+        # The basket was built kinematic (see patch) so it can be moved; the success test reads
+        # env.basket_origin, so it moves with the walls. Nominal origin kept across resets.
+        nominal = getattr(env, "_gaphunter_basket_nominal", None)
+        if nominal is None:
+            nominal = env._gaphunter_basket_nominal = np.asarray(env.basket_origin, dtype=np.float32).copy()
+        origin = (nominal + np.asarray((bx, by, 0.0), dtype=np.float32)).astype(np.float32)
+        for fixture in (env.basket_floor, env.basket):
+            env.batch_pose(fixture, torch.as_tensor(origin), env_idx=env_idx)
+        env.basket_origin = origin
+        env.task_spec["goal_position"] = (origin + np.asarray((0, 0, env.basket_floor_z))).tolist()
+        env.task_spec["gaphunter_basket_offsets"] = {"bx": bx, "by": by}
     dx, dy, yaw = current_offsets()
     if dx == 0.0 and dy == 0.0 and yaw == 0.0:
         return
@@ -68,13 +91,17 @@ def patch() -> None:
     if getattr(OddGeometryEnv.initialize_task, "_gaphunter", False):
         return
     friction = object_friction()
-    if friction is not None:
-        # build_task looks up build_actor as a module global; only the task object is changed.
+    move_basket = any(basket_offsets())
+    if friction is not None or move_basket:
+        # build_task looks up build_actor as a module global; only the task object and, when the
+        # basket is displaced, the two basket fixtures (kinematic instead of static) are changed.
         original_build_actor = geometry_tasks.build_actor
 
         def build_actor(env, name, *args, **kwargs):
-            if name == "odd_geometry":
+            if name == "odd_geometry" and friction is not None:
                 kwargs["friction"] = friction
+            if name in ("basket", "basket_floor") and move_basket:
+                kwargs["static"], kwargs["kinematic"] = False, True
             return original_build_actor(env, name, *args, **kwargs)
 
         geometry_tasks.build_actor = build_actor

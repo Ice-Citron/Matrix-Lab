@@ -25,6 +25,13 @@ def sort_deploy_box() -> dict:
     return {"dx": (-0.30, 0.30), "dy": (-0.35, 0.20), "yaw": (-45.0, 45.0)}
 
 
+def ditto_dr_box() -> dict:
+    # Sphere-in-basket domain randomisation: the sphere over the reach-limited Ditto local box and the
+    # basket displaced by (bx, by) from its nominal (-0.40, 0). by stops at +0.08 so the far wall stays
+    # clear of the sphere's start at y = 0.23.
+    return {"dx": (-0.05, 0.05), "dy": (-0.02, 0.05), "yaw": (-15.0, 15.0), "bx": (-0.10, 0.10), "by": (-0.10, 0.08)}
+
+
 def sample_box(box: dict, n: int, method: str = "sobol", seed: int = 0) -> list[dict]:
     """n param dicts inside box; each gets seed = seed + i."""
     names = [k for k in PARAMS if k in box] + [k for k in box if k not in PARAMS]
