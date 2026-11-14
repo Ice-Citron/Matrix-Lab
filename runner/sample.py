@@ -19,6 +19,15 @@ def deploy_box() -> dict:
     return {"dx": (-0.20, 0.20), "dy": (-0.20, 0.20), "yaw": (-90.0, 90.0)}
 
 
+def isaac_local_box() -> dict:
+    # LeIsaac SO-101 orange-in-bowl: offsets from Orange001's nominal pose (brief, Task 2).
+    return {"dx": (-0.03, 0.03), "dy": (-0.03, 0.03), "yaw": (-15.0, 15.0)}
+
+
+def isaac_deploy_box() -> dict:
+    return {"dx": (-0.12, 0.12), "dy": (-0.12, 0.12), "yaw": (-90.0, 90.0)}
+
+
 def sort_deploy_box() -> dict:
     # Bin sorting: the cube anywhere on the table the UR5e reaches, 5 cm clear of the bins (offsets from the
     # nominal cube at (0.45, -0.05)). A cube repeats every 90 deg, so +/-45 covers every yaw.

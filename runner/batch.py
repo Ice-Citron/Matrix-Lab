@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from runner.sample import deploy_box, local_box, sample_box, sort_deploy_box
+from runner.sample import deploy_box, isaac_deploy_box, isaac_local_box, local_box, sample_box, sort_deploy_box
 
 #rucha's code review
 #purpose of this is to set the root path of the project and define the path for saving results.
@@ -199,6 +199,8 @@ def main() -> None:
         return
 
     box = {"local": local_box, "deploy": deploy_box, "sort_deploy": sort_deploy_box}[a.box]()
+    if os.environ.get("GAPHUNTER_SIM") == "isaac":  # the SO-101 orange task has its own, smaller boxes
+        box = {"local": isaac_local_box, "deploy": isaac_deploy_box}[a.box]()
     params = sample_box(box, a.n, method=a.method, seed=a.seed)
     t0 = time.time()
     df = run_batch(params, n_workers=a.workers, render_failures=a.render_failures, tag=tag,

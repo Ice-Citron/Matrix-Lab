@@ -22,7 +22,9 @@ along -y at `shoulder_pan` 0.
 | Image | 640 x 480 RGB at 30 FPS |
 
 The oranges lie 20 to 31 cm in front of the base, up to 7 cm either side of the reach line; the plate
-centre is 27 cm in front and 22 cm to the left of the base (toward `shoulder_pan` positive). The sim's
+centre is 27 cm in front of the base and 22 cm to the robot's right (image left, `shoulder_pan`
+positive). The trial's target orange (Orange001) starts 31 cm in front and 7 cm to the robot's left
+(image right, farther from the plate). The sim's
 `domain_randomize_4` event jitters this camera by up to 2.5 cm and 2.5 degrees per reset; the Astra
 trials run with it disabled.
 
