@@ -51,6 +51,24 @@ POLICIES = [
               "docstrings as Astra; code unedited."},
     {"policy": "molmoact2", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK, "sim": "ditto",
      "local_box": DITTO_LOCAL_BOX, "notes": "Native MolmoAct2-DROID checkpoint, 15 Hz, 450 steps."},
+    {"policy": "fable-live", "family": "LLM closed-loop control", "model": "claude-fable-5-2",
+     "task": DITTO_TASK, "sim": "ditto", "local_box": DITTO_LOCAL_BOX,
+     "local_csv": "results/ditto_fable_live_cmp_smoke.csv",
+     "notes": "Fable 5.2 drives the arm live through the Responses proxy, same harness and caps as opus-live. "
+              "Three-trial smoke on the local box."},
+    # Domain randomisation on the sphere task: the sphere moves over the local box and the basket by up to
+    # 10 cm (runner.sample.ditto_dr_box). One csv per policy over the same 64 Sobol placements, seed 8400000.
+    {"policy": "molmoact2-dr", "family": "VLA", "model": "MolmoAct2-DROID", "task": DITTO_TASK + ", basket moved",
+     "sim": "ditto", "local_box": DITTO_LOCAL_BOX, "deploy_csv": "results/ditto_molmoact2_dr.csv",
+     "notes": "MolmoAct2 over 64 placements where both the sphere and the basket move."},
+    {"policy": "astra-script-dr", "family": "LLM-written policy code", "model": "gpt-6-astra",
+     "task": DITTO_TASK + ", basket moved", "sim": "ditto", "local_box": DITTO_LOCAL_BOX,
+     "deploy_csv": "results/ditto_astra-script_dr.csv",
+     "notes": "Astra's sphere script (results/policies/ditto_astra_v1.py) on the same 64 placements."},
+    {"policy": "fable-script-dr", "family": "LLM-written policy code", "model": "claude-fable-5-2",
+     "task": DITTO_TASK + ", basket moved", "sim": "ditto", "local_box": DITTO_LOCAL_BOX,
+     "deploy_csv": "results/ditto_fable-script_dr.csv",
+     "notes": "Fable 5.2's sphere script (results/policies/ditto_fable_v1.py) on the same 64 placements."},
 ]
 KEYS = ["policy", "family", "model", "task", "sim", "status", "n_local", "local_success", "n_deploy",
         "deploy_success", "outside_success", "local_csv", "deploy_csv", "notes"]
