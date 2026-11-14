@@ -113,15 +113,51 @@ def read_transcript(rel: str) -> dict | None:
     return t if isinstance(t, dict) else None
 
 
+def is_mujoco(t: dict) -> bool:
+    steps = t.get("steps")
+    return isinstance(steps, list) and bool(steps) and isinstance(steps[0], dict) and "tcp" in steps[0]
+
+
 def trajectory(t: dict) -> pd.DataFrame:
     """TCP after every API call of a MuJoCo transcript."""
+    if not is_mujoco(t):
+        return pd.DataFrame()
     rows = [{"i": s["i"], "api": s["api"], "x": s["tcp"][0], "y": s["tcp"][1], "z": s["tcp"][2],
-             "force_N": s.get("force_N")} for s in t.get("steps", []) if s.get("tcp")]
+             "force_N": s.get("force_N")} for s in t["steps"] if s.get("tcp")]
+    return pd.DataFrame(rows)
+
+
+def ditto_trajectory(transcript_rel: str) -> pd.DataFrame:
+    """End-effector position per control step from the Ditto run folder that produced the transcript."""
+    stem = Path(transcript_rel).stem
+    h = stem.rsplit("-", 1)[-1]
+    files = sorted((ROOT / "results" / "runs").glob(f"{h}-*/evaluation/*/evals/*/trajectory-steps.jsonl"))
+    if not files:
+        return pd.DataFrame()
+    rows = []
+    with open(files[-1]) as fh:
+        for line in fh:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("eef_pos"):
+                rows.append({"i": d.get("step"), "api": "control step", "x": d["eef_pos"][0], "y": d["eef_pos"][1],
+                             "z": d["eef_pos"][2], "force_N": None})
     return pd.DataFrame(rows)
 
 
 def reason(t: dict) -> str:
     """Why the trial ended, from the outcome and the agent log when there is one."""
+    if "oracle_success" in t:  # a Ditto transcript: the framework's result record
+        meta = t.get("policy_metadata") or {}
+        parts = [f"{'success' if t.get('oracle_success') else 'failure'} by the task oracle",
+                 f"run status {t.get('status')} ended by {t.get('termination_reason')}",
+                 f"{t.get('steps')} control steps over {t.get('sim_time_s')} s of sim time",
+                 f"progress {t.get('final_progress_score')} at the end (peak {t.get('progress_score')})"]
+        if meta.get("policy"):
+            parts.append(f"policy {meta['policy']}")
+        return " · ".join(str(x) for x in parts)
     o = t.get("outcome") or {}
     parts = [f"{'success' if o.get('success') else o.get('failure_mode') or 'failure'} after {o.get('api_calls')} API calls"]
     for k, unit in (("depth_mm", "mm deep"), ("lateral_mm", "mm lateral"), ("yaw_err_deg", "deg yaw error"),
@@ -147,13 +183,16 @@ def last_reply(t: dict, limit: int = 1200) -> str | None:
     return r if len(r) <= limit else r[:limit] + f"\n… ({len(r) - limit} more characters)"
 
 
-def clip_path(transcript_rel: str, render: bool = True) -> Path | None:
-    """results/clips/<transcript stem>.mp4, rendered by analysis.replay_clip when missing."""
+def clip_path(transcript_rel: str, render: bool = True, row_clip: str | None = None) -> Path | None:
+    """The csv row's clip when it exists, else results/clips/<transcript stem>.mp4, rendered by
+    analysis.replay_clip when missing and the transcript is a MuJoCo one."""
+    if isinstance(row_clip, str) and (ROOT / row_clip).is_file():
+        return ROOT / row_clip
     stem = Path(transcript_rel).stem
     clip = RESULTS / "clips" / f"{stem}.mp4"
     if clip.is_file():
         return clip
-    if not render:
+    if not render or not is_mujoco(read_transcript(transcript_rel) or {}):
         return None
     from analysis.replay_clip import replay
     try:

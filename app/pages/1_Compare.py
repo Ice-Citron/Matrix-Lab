@@ -13,6 +13,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from analysis import field as FD  # noqa: E402
 from analysis import trials as T  # noqa: E402
 
 st.set_page_config(page_title="GapHunter · Compare", layout="wide", initial_sidebar_state="collapsed")
@@ -124,10 +125,11 @@ if row is None:
     st.info("Click a dot above to open that trial.")
 else:
     st.subheader(f"{row['policy']} · seed {row['seed']} · {row['outcome']}")
-    t = _transcript(str(row["transcript"]), (ROOT / str(row["transcript"])).stat().st_mtime) if isinstance(row["transcript"], str) and (ROOT / str(row["transcript"])).is_file() else None
+    has_t = isinstance(row["transcript"], str) and (ROOT / str(row["transcript"])).is_file()
+    t = _transcript(str(row["transcript"]), (ROOT / str(row["transcript"])).stat().st_mtime) if has_t else None
     v1, v2 = st.columns([1, 1.3], gap="medium")
     with v1:
-        clip = T.clip_path(str(row["transcript"])) if t and t.get("steps") and t["steps"][0].get("tcp") else None
+        clip = T.clip_path(str(row["transcript"]) if has_t else "", render=has_t, row_clip=row.get("clip"))
         if clip:
             st.video(str(clip))
         else:
@@ -141,7 +143,7 @@ else:
             if reply:
                 with st.expander("The model's last reply"):
                     st.code(reply, language=None, wrap_lines=True)
-            traj = T.trajectory(t)
+            traj = T.trajectory(t) if T.is_mujoco(t) else T.ditto_trajectory(str(row["transcript"]))
             if len(traj):
                 nom = T.NOMINAL.get(row["sim"])
                 target = pd.DataFrame([{"x": nom[0] + row["dx"], "y": nom[1] + row["dy"], "what": "true target"}]) if nom else None
@@ -156,6 +158,39 @@ else:
                                             height.properties(height=230, width=260, title="tool height")), width="stretch")
         else:
             st.caption("No transcript for this trial.")
+
+# ------------------------------------------------------------------ 2b. success-probability field
+st.header("Success-probability field")
+st.caption("Every trial is one draw from a coin whose bias depends on the placement. The field estimates that bias "
+           "over the two axes of the map above for one policy, with the five estimators of the flow page. Masked "
+           "cells have too little data behind them. The score is a 10-fold cross-validated Brier score, lower is better.")
+f1, f2, f3 = st.columns([1.2, 1, 1])
+field_policy = f1.selectbox("Field for", policies) if policies else None
+est = f2.selectbox("Estimator", list(FD.ESTIMATORS), format_func=lambda e: FD.ESTIMATORS[e][0])
+knob_spec = FD.ESTIMATORS[est][1]
+knob = f3.slider(knob_spec[0], float(knob_spec[1]), float(knob_spec[2]), float(knob_spec[3])) if knob_spec else None
+fpts = pts[(pts["policy"] == field_policy)] if field_policy else pts.iloc[0:0]
+fpts = fpts[fpts[x_param].notna() & fpts[y_param].notna()]
+if len(fpts) < FD.FIELD_MIN:
+    st.info(f"At least {FD.FIELD_MIN} trials are needed for a field; {field_policy} has {len(fpts)} on these axes.")
+else:
+    box = ((float(fpts[x_param].min()), float(fpts[x_param].max())), (float(fpts[y_param].min()), float(fpts[y_param].max())))
+    arr = fpts[[x_param, y_param, "success"]].astype(float).to_numpy()
+    fit = FD.fitter(est, knob, box)
+    table, note, cw, ch = FD.grid_field(fit, arr, box, g=32)
+    score, scored = FD.cv_brier(fit, arr)
+    table = table[table["support"] & table["p"].notna()]
+    cells = alt.Chart(table).mark_rect().encode(
+        x=alt.X("x:Q", title=T.PARAMS[x_param], bin=alt.Bin(step=cw)), y=alt.Y("y:Q", title=T.PARAMS[y_param], bin=alt.Bin(step=ch)),
+        color=alt.Color("p:Q", title="P(success)", scale=alt.Scale(scheme="blues", domain=[0, 1])),
+        tooltip=[alt.Tooltip("x:Q", format=".3f"), alt.Tooltip("y:Q", format=".3f"), alt.Tooltip("p:Q", format=".2f"),
+                 alt.Tooltip("lo:Q", format=".2f"), alt.Tooltip("hi:Q", format=".2f")])
+    dots = alt.Chart(fpts).mark_point(size=40, filled=True, stroke="#0b0b0b", strokeWidth=0.5).encode(
+        x=f"{x_param}:Q", y=f"{y_param}:Q",
+        color=alt.Color("outcome:N", scale=alt.Scale(domain=outcomes, range=[OUTCOME_COLOURS[o] for o in outcomes]), legend=None),
+        tooltip=["seed", "outcome"])
+    st.altair_chart((cells + dots).properties(height=420), width="stretch")
+    st.caption(f"{field_policy}: {len(fpts)} trials · {note} · cross-validated Brier {score:.3f} on {scored} trials")
 
 # ------------------------------------------------------------------ 3. mcap replay
 st.header("Trajectory from an mcap bag")
