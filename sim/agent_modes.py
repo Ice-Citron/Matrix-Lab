@@ -21,7 +21,8 @@ import math
 import re
 import time
 
-from sim.mj_sim import MAX_API_CALLS
+from sim.mj_sim import MAX_API_CALLS, ApiCapReached, CollisionStop
+from sim.mj_trial import _WallTimeout
 from sim.write_policy import MODEL, SORT_TASK, TASK, ask_astra, ask_opus
 
 MAX_TURNS = 40
@@ -63,7 +64,7 @@ toward the call budget, are:
 Reply with the complete module in a single ```python code block, followed by at most three sentences
 explaining the strategy."""
 
-FLY_CONTINUE = """Your script returned but `api.done()` is still false. The sim was not reset. This is the trace of
+FLY_CONTINUE = """Your script {ended} and `api.done()` is still false. The sim was not reset. This is the trace of
 every API call so far (call number. function(args) -> result; tcp is the controlled point in metres):
 {trace}
 
@@ -234,19 +235,18 @@ def run_fly(api, task: str, log: dict) -> None:
         if code is None:
             log["end"] = "bad_output"
             return
+        ended = "returned"
         try:
             _run_module(code, api)
-        except ValueError as exc:  # no run(api): one more chance through the repair path
-            log["calls"][-1]["parse_error"] = str(exc)
-            code = _ask_valid(prompt + "\n\n" + REPAIR.format(error=exc), _parse_code, log)
-            if code is None:
-                log["end"] = "bad_output"
-                return
-            _run_module(code, api)
+        except (ApiCapReached, CollisionStop, _WallTimeout):
+            raise  # the sim's own stops; the trial runner maps them
+        except Exception as exc:  # noqa: BLE001 - the model's script crashed: it sees the error and may continue
+            ended = f"raised {type(exc).__name__}: {exc}"
+            log["calls"][-1]["script_error"] = ended
         if api.done():  # counted, like a script's own done() check
             log["end"] = "done"
             return
         trace = "\n".join(f"{s['i']}. {s['api']}({_fmt(s['args'])}) -> {_fmt(s['result'])} tcp {s['tcp']}"
                           for s in api._SIM.log)
-        prompt = scene + "\n\n" + FLY_CONTINUE.format(trace=trace)
+        prompt = scene + "\n\n" + FLY_CONTINUE.format(ended=ended, trace=trace)
     log["end"] = "rewrite_cap"
