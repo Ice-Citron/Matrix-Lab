@@ -91,20 +91,19 @@ def patch() -> None:
     if getattr(OddGeometryEnv.initialize_task, "_gaphunter", False):
         return
     friction = object_friction()
-    move_basket = any(basket_offsets())
-    if friction is not None or move_basket:
-        # build_task looks up build_actor as a module global; only the task object and, when the
-        # basket is displaced, the two basket fixtures (kinematic instead of static) are changed.
-        original_build_actor = geometry_tasks.build_actor
+    # build_task looks up build_actor as a module global; only the task object and the two basket
+    # fixtures are changed. The basket is built kinematic so a later reset can displace it (bx, by);
+    # a kinematic fixture is immovable for the physics exactly like a static one.
+    original_build_actor = geometry_tasks.build_actor
 
-        def build_actor(env, name, *args, **kwargs):
-            if name == "odd_geometry" and friction is not None:
-                kwargs["friction"] = friction
-            if name in ("basket", "basket_floor") and move_basket:
-                kwargs["static"], kwargs["kinematic"] = False, True
-            return original_build_actor(env, name, *args, **kwargs)
+    def build_actor(env, name, *args, **kwargs):
+        if name == "odd_geometry" and friction is not None:
+            kwargs["friction"] = friction
+        if name in ("basket", "basket_floor"):
+            kwargs["static"], kwargs["kinematic"] = False, True
+        return original_build_actor(env, name, *args, **kwargs)
 
-        geometry_tasks.build_actor = build_actor
+    geometry_tasks.build_actor = build_actor
     original = OddGeometryEnv.initialize_task
 
     def initialize_task(self, env_idx, options):

@@ -20,10 +20,12 @@ import ditto.envs  # noqa: F401
 override.patch()
 from ditto.integration.worker import SuiteSimulator
 from sim.ditto_script import api
-from runner.sample import sample_box
+from runner.sample import ditto_dr_box, sample_box
 
 BOXES = {"local": {"dx": (-0.05, 0.05), "dy": (-0.02, 0.05), "yaw": (-15.0, 15.0)},
-         "deploy": {"dx": (-0.12, 0.12), "dy": (-0.02, 0.20), "yaw": (-90.0, 90.0)}}
+         "deploy": {"dx": (-0.12, 0.12), "dy": (-0.02, 0.20), "yaw": (-90.0, 90.0)},
+         "dr": ditto_dr_box()}  # sphere and basket both move
+PLACEMENT = ("dx", "dy", "yaw", "bx", "by")
 MAX_CALLS = 60
 
 
@@ -82,12 +84,12 @@ def main():
     sim = SuiteSimulator(source_root=LRC / "third_party/molmoact2", assets_root=LRC / "data/molmoact2-sim-eval-assets",
                          control_mode="pd_ee_delta_pose", shader_pack="minimal")
     cols = ["dx", "dy", "yaw", "seed", "success", "failure_mode", "n_decisions", "t_wall", "clip", "transcript",
-            "pose_error_mm", "pass"]
+            "pose_error_mm", "pass"] + [k for k in ("bx", "by") if k in BOXES[box]]
     name = policy.replace("_v1", "").replace("ditto_", "")  # ditto_astra_v1 -> astra
     out = ROOT / "results" / f"ditto_{name}-script_{box}.csv"
     for p in sample_box(BOXES[box], n, seed=seed):
         t0 = time.time()
-        override.OVERRIDE = {k: p[k] for k in ("dx", "dy", "yaw")}
+        override.OVERRIDE = {k: p[k] for k in PLACEMENT if k in p}
         sim.reset(env_id="DittoOddGeometry-v1", seed=int(p["seed"]), difficulty="easy")
         s = DittoScriptSim(sim, record=True); api._SIM = s; mode = ""
         try:
@@ -99,14 +101,14 @@ def main():
         ok = bool(sim.env.unwrapped.evaluate()["success"][0]) and mode == ""
         if not ok and not mode:
             mode = "drop" if bool(sim.env.unwrapped._ever_lifted[0]) else "miss"
-        h = hashlib.sha1(json.dumps({k: float(p[k]) if k != "seed" else int(p[k]) for k in ("dx", "dy", "yaw", "seed")}, sort_keys=True).encode()).hexdigest()
+        h = hashlib.sha1(json.dumps({k: float(p[k]) if k != "seed" else int(p[k]) for k in (*PLACEMENT, "seed") if k in p}, sort_keys=True).encode()).hexdigest()
         clip = ROOT / "results/clips" / f"ditto-{name}-script-{h}.mp4"
         if s.frames:
             fr = s.frames[:: max(1, len(s.frames) // 150)]
             imageio.mimwrite(str(clip), [f[::2, ::2] for f in fr], fps=15, macro_block_size=1)
         row = {"dx": p["dx"], "dy": p["dy"], "yaw": p["yaw"], "seed": p["seed"], "success": ok, "failure_mode": mode,
                "n_decisions": s.calls, "t_wall": time.time() - t0, "clip": str(clip.relative_to(ROOT)) if s.frames else None,
-               "transcript": None, "pose_error_mm": None, "pass": 1}
+               "transcript": None, "pose_error_mm": None, "pass": 1, **{k: p[k] for k in ("bx", "by") if k in p}}
         new = not out.exists()
         with out.open("a", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=cols)
