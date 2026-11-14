@@ -7,10 +7,10 @@ the same pattern as sim/ditto_trial.py.
 
 One arm, joint space: Astra gets the front camera image, the joint state in LeRobot motor units and a
 short history, and replies with six absolute joint targets. The sim steps STEPS_PER_DECISION physics
-steps per decision. Success is Orange001 (the offset orange) inside the task's plate box or any
-orange's put_orange00N_to_plate subtask flag, not the
-task's own task_done term (all three oranges plus the rest pose): the brief measures one orange in the
-bowl, and task_done is recorded in the transcript outcome as well (team-lead decision, 2026-11-13).
+steps per decision. Success is TARGET_ORANGE (the offset orange) placed: its put_orange00N_to_plate
+subtask flag, or the orange resting inside the task's plate box at the end of a decision. It is not
+the task's own task_done term (all three oranges plus the rest pose): the brief measures one orange in
+the bowl, and task_done is recorded in the transcript outcome as well (team-lead decision, 2026-11-13).
 
 Arm and Camera mirror the classes in hardware/so101_astra_loop.py so the loop body is the same code
 on the real arm and in the sim.
@@ -50,6 +50,7 @@ SEGFAULT_EXIT = 139              # Kit occasionally segfaults in XOpenDisplay be
 
 # LeRobot joint name -> index in env.scene["robot"].joint_names (the USD order). The SO-101 USD lists
 # the joints in LeRobot order already; _World asserts this at creation.
+TARGET_ORANGE = "Orange001"  # the offset orange and the one success is measured on (base frame x +0.07, y -0.31 m)
 JOINT_MAP = {"shoulder_pan": 0, "shoulder_lift": 1, "elbow_flex": 2, "wrist_flex": 3, "wrist_roll": 4,
              "gripper": 5}
 
@@ -68,8 +69,10 @@ limits, and a short history of your previous decisions. Each decision you output
 targets; the arm then moves toward them for about half a second before the next image is taken, so
 compare the reached joints with what you asked for.
 
-Task: pick up the orange nearest the plate (the leftmost orange in the image) and put it on the
-plate. The task counts as done when that orange lies on the plate; the other oranges can stay.
+Task: pick up the TARGET orange and put it on the plate. The target is the right-hand one of the two
+oranges visible at the start (the one farther from the plate, about 30 cm in front of the base and
+slightly to the right of the arm's centre line). The task counts as done when that orange rests on
+the plate; the other oranges can stay where they are.
 
 Joint values are LeRobot motor units: -100 .. 100 per joint (roughly degrees), gripper 0 = closed ..
 100 = open. Each joint may move at most 25 units per decision; larger steps are clipped.
@@ -104,8 +107,9 @@ JOINT_GUIDE = """- shoulder_pan: positive swings the whole arm toward the plate 
 At the start (all joints 0) the arm stands upright under the camera and hides the third orange, which
 lies on the counter just in front of the base. Verified example: shoulder_pan 0, shoulder_lift 55,
 elbow_flex 20, wrist_flex 60 puts the open gripper tip on the counter about 30 cm in front of the base,
-between the two visible oranges; shoulder_pan about +12 aims at the left orange, about -10 at the right
-one. When the gripper presses on the counter the reached joints stay below the commanded ones."""
+between the two visible oranges; shoulder_pan about +12 aims at the left orange, about -10 at the
+target (right) orange. When the gripper presses on the counter the reached joints stay below the
+commanded ones."""
 
 
 def param_hash(params: dict) -> str:
@@ -147,6 +151,9 @@ class _World:
         cfg.use_teleop_device("so101leader")  # 6 absolute joint targets in radians
         cfg.sim.use_fabric = False            # with Fabric the RTX cameras render from a wrong transform
         cfg.episode_length_s = 2 * TRIAL_TIMEOUT_S  # the env must never auto-reset mid-trial
+        # LeIsaac's teleop recorder opens one shared HDF5 file (/tmp/isaaclab/logs/dataset.hdf5) per
+        # process; a second Isaac process on the box then dies on the file lock. Not needed here.
+        cfg.recorders = None
         for i in range(5):  # orange / plate / camera randomisation: the trial sets the orange pose itself
             setattr(cfg.events, f"domain_randomize_{i}", None)
         self.env = gym.make(TASK_ID, cfg=cfg).unwrapped
@@ -154,13 +161,13 @@ class _World:
         assert [names[i] for i in JOINT_MAP.values()] == list(JOINT_MAP), names
         self.action = torch.zeros((1, 6), device=self.env.device)
         self.obs = None
-        self.success = self.task_done = self.grasped = self.placed = False
+        self.success = self.task_done = self.grasped = self.placed = self.target_placed = False
         self.frames: list[np.ndarray] = []
         self.record_every = 0
 
     def reset(self, seed: int, dx: float, dy: float, yaw_deg: float) -> None:
         self.obs, _ = self.env.reset(seed=seed)
-        orange = self.env.scene["Orange001"]
+        orange = self.env.scene[TARGET_ORANGE]
         state = orange.data.default_root_state.torch.clone()  # (1, 13): pos, quat xyzw, lin vel, ang vel
         state[:, :3] += self.env.scene.env_origins
         state[:, 0] += dx
@@ -170,7 +177,7 @@ class _World:
         orange.write_root_pose_to_sim(state[:, :7])
         orange.write_root_velocity_to_sim(state[:, 7:])
         self.action.zero_()
-        self.success = self.task_done = self.grasped = self.placed = False
+        self.success = self.task_done = self.grasped = self.placed = self.target_placed = False
         self.frames = []
         self.step(1)  # settle one step so the observation shows the new orange pose
 
@@ -180,19 +187,27 @@ class _World:
             flags = self.flags()
             self.grasped |= any(v for k, v in flags.items() if k.startswith("pick_"))
             self.placed |= any(v for k, v in flags.items() if k.startswith("put_"))
+            self.target_placed |= flags[f"put_{TARGET_ORANGE.lower()}_to_plate"]
             if self.record_every and i % self.record_every == 0:
                 self.frames.append(self.front_rgb())
             self.task_done |= bool(terminated[0])  # the only terminated term is task_done (strict, three oranges)
-            if self.task_done or self.orange_on_plate():
+            if self.task_done:
                 self.success = True
                 return
+        # Checked once per decision, after the arm had its steps: a held orange swinging past the plate
+        # mid-move must not count.
+        if self.target_placed or self.orange_on_plate():
+            self.success = True
 
     def orange_on_plate(self) -> bool:
-        """Orange001 inside the box task_done uses: +/-0.10 m in x and y, +/-0.07 m in z of the plate."""
-        orange = self.env.scene["Orange001"].data.root_pos_w.torch[0]
-        plate = self.env.scene["Plate"].data.root_pos_w.torch[0]
-        d = (orange - plate).abs().tolist()
-        return d[0] < 0.10 and d[1] < 0.10 and d[2] < 0.07
+        """TARGET_ORANGE inside the box task_done uses (+/-0.10 m x/y, +/-0.07 m z of the plate), resting
+        (speed below 0.05 m/s) and not held in the gripper (pick flag off)."""
+        orange = self.env.scene[TARGET_ORANGE].data
+        plate = self.env.scene["Plate"].data
+        d = (orange.root_pos_w.torch[0] - plate.root_pos_w.torch[0]).abs().tolist()
+        speed = float(orange.root_lin_vel_w.torch[0].norm())
+        held = self.flags()[f"pick_{TARGET_ORANGE.lower()}"]
+        return d[0] < 0.10 and d[1] < 0.10 and d[2] < 0.07 and speed < 0.05 and not held
 
     def flags(self) -> dict[str, bool]:
         return {k: bool(v[0]) for k, v in self.obs["subtask_terms"].items()}
@@ -395,22 +410,23 @@ def _run_in_process(params: dict, render: bool) -> dict:
         arm.send_joint_targets(target)
         after = arm.read_joint_state()
         row.update(action=action, target_sent=target, joints_after=after, flags=world.flags(),
-                   t_end=round(time.time() - t0, 1))
+                   positions=world.positions(), t_end=round(time.time() - t0, 1))
         decisions.append(row)
         history = (history + [{"reasoning": action["reasoning"],
                                "target": {j: round(v, 1) for j, v in target.items()},
                                "reached": {j: round(v, 1) for j, v in after.items()}}])[-HISTORY_LEN:]
         print(f"[{it:02d}] {action['reasoning']}", flush=True)
-        if world.success or world.placed or action["done"]:
+        if world.success or action["done"]:
             break
-    success = world.success or world.placed
+    success = world.success
     if success:
         mode = ""
     elif not mode:  # cap hit or Astra said done early: miss = never grasped, drop = grasped but not placed
         mode = "miss" if not world.grasped else "drop"
     t_wall = time.time() - t0
     outcome = {"success": success, "failure_mode": mode, "task_done_three_oranges": world.task_done,
-               "orange001_on_plate": world.orange_on_plate(), "grasped": world.grasped, "placed": world.placed,
+               "target_orange": TARGET_ORANGE, "target_on_plate": world.orange_on_plate(),
+               "target_put_flag": world.target_placed, "grasped": world.grasped, "placed": world.placed,
                "flags_final": world.flags(), "positions_final": world.positions(),
                "n_decisions": len(decisions), "t_wall": round(t_wall, 1)}
     transcript = _write_transcript({"params": dict(params), "model": MODEL, "decision_cap": DECISION_CAP,
