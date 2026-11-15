@@ -52,9 +52,9 @@ git clone https://github.com/Ice-Citron/gaphunter.git && cd gaphunter
 python3.12 -m venv .venv
 .venv/bin/pip install numpy==2.5.4 scipy==1.18.1 pandas==3.0.6 matplotlib==3.11.2 \
   streamlit==1.66.0 imageio==2.38.1 imageio-ffmpeg==0.6.0 mujoco==3.16.0
-git clone --filter=blob:none --sparse https://github.com/google-deepmind/mujoco_menagerie.git third_party/mujoco_menagerie
-git -C third_party/mujoco_menagerie sparse-checkout set universal_robots_ur5e
-git -C third_party/mujoco_menagerie checkout 62ab00f
+git clone --filter=blob:none --sparse https://github.com/google-deepmind/mujoco_menagerie.git submodules/mujoco_menagerie
+git -C submodules/mujoco_menagerie sparse-checkout set universal_robots_ur5e
+git -C submodules/mujoco_menagerie checkout 62ab00f
 
 make demo          # rebuild the docs from the committed results and open the app on localhost
 ```

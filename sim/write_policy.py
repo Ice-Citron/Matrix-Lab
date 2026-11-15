@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CREDENTIALS = ROOT / "llms-for-robot-control" / "credentials.env"
+CREDENTIALS = ROOT / "submodules" / "llms-for-robot-control" / "credentials.env"
 MODEL = os.environ.get("GAPHUNTER_MODEL", "gpt-6-astra")
 
 TASK = """You are writing the control policy for a peg-in-hole insertion cell.

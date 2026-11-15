@@ -23,7 +23,7 @@ PORT = 8765
 
 def _creds():
     env = {}
-    for line in (ROOT / "llms-for-robot-control" / "credentials.env").read_text().splitlines():
+    for line in (ROOT / "submodules" / "llms-for-robot-control" / "credentials.env").read_text().splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1)
             env[k.strip()] = v.strip().strip('"').strip("'")

@@ -150,7 +150,7 @@ At dy=-0.08 the open fingers hit the basket wall. If Ditto is revived, the deplo
 # MuJoCo peg-in-hole fallback (active since 13:00)
 
 `GAPHUNTER_SIM=mujoco`, run from the team `.venv` (`pip install mujoco "imageio[ffmpeg]"`). UR5e model:
-`third_party/mujoco_menagerie/universal_robots_ur5e` (sparse clone, gitignored). Rendering: `MUJOCO_GL=egl`.
+`submodules/mujoco_menagerie/universal_robots_ur5e` (sparse clone, gitignored). Rendering: `MUJOCO_GL=egl`.
 
 | file | role |
 |---|---|

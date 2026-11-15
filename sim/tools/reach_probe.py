@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LRC = ROOT / "llms-for-robot-control"
+LRC = ROOT / "submodules" / "llms-for-robot-control"
 for p in (LRC / "ditto-bench/src", LRC / "agentic-framework/src", LRC / "agentic-framework/vendor/inspect-robots/src"):
     sys.path.insert(0, str(p))
 os.environ.setdefault("DITTO_FRAMEWORK_ROOT", str(LRC / "agentic-framework"))
