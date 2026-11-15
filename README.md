@@ -16,9 +16,9 @@ We are building Matrix Lab for this gap. The user uploads a policy for a defined
 
 Today it supports two tasks, peg-in-hole and ball grasping, and evaluates four policies side by side: an Astra-written policy, an Opus-written policy, Astra driving the arm live, and MolmoAct2 (a VLA). Opus-live, Pi-0.5, Gemini Robotics and GR00T are wired in but not yet run (checkpoints didn't download in time). In the future, this system will be extended to more generic task categories, be hardware agnostic, support more simulators, and let users define custom tasks and scenes.
 
-![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](docs/robot.gif)
+![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](https://huggingface.co/datasets/Matrix-Lab/Matrix-Lab-Preliminary-Experiments/resolve/main/docs/robot.gif)
 
-[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](docs/flow.png)]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html))
+[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](https://huggingface.co/datasets/Matrix-Lab/Matrix-Lab-Preliminary-Experiments/resolve/main/docs/flow.png)]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html))
 
 
 ## Getting started
