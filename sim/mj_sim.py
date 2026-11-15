@@ -28,7 +28,7 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 import mujoco  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-UR5E = ROOT / "third_party" / "mujoco_menagerie" / "universal_robots_ur5e"
+UR5E = ROOT / "submodules" / "mujoco_menagerie" / "universal_robots_ur5e"
 
 NOMINAL_HOLE = np.array([0.45, 0.0])
 TOP_Z = 0.05             # fixture top surface

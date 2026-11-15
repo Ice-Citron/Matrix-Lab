@@ -30,7 +30,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LRC = Path(os.environ.get("GAPHUNTER_LRC", ROOT / "llms-for-robot-control")).resolve()
+LRC = Path(os.environ.get("GAPHUNTER_LRC", ROOT / "submodules" / "llms-for-robot-control")).resolve()
 AGENT_JSON = ROOT / "sim" / os.environ.get("GAPHUNTER_DITTO_CONFIG", "agent.json")  # or molmoact2_ditto.json / pi05_ditto.json
 ARTIFACT_PREFIX = f"ditto-{AGENT_JSON.stem}-"  # keeps Ditto clips/transcripts apart from MuJoCo ones with the same params
 RESULTS = ROOT / "results"
