@@ -7,7 +7,7 @@ STREAMLIT_FLAGS ?= --server.address localhost
 
 # Re-render README/VIDEO_SCRIPT/heatmap from the committed CSVs, then open the app.
 demo: docs
-	$(STREAMLIT) run core/web_matrixlab/core/web_app/streamlit_app.py $(STREAMLIT_FLAGS)
+	$(STREAMLIT) run core/web_matrixlab/matrixlab/core/web_app/streamlit_app.py $(STREAMLIT_FLAGS)
 
 docs:
-	$(PY) -m core.web_app.fill_docs
+	$(PY) -m matrixlab.core.web_app.fill_docs
