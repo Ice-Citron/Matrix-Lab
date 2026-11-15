@@ -61,6 +61,20 @@ POLICIES = [
      "local_csv": "results/bowl_fable-script_local.csv", "deploy_csv": "results/bowl_fable-script_deploy.csv",
      "notes": "Fable 5.2 writes policy.py once (results/policies/bowl_fable_v1.py) from the same prompt and API "
               "docstrings as Astra; code unedited."},
+    {"policy": "opus-script-bowl", "family": "LLM-written policy code", "model": "claude-opus-5-5",
+     "task": "bin sorting into round bowls, UR5e (cream, grey, black)", "sim": "bowl", "local_box": local_box(),
+     "local_csv": "results/bowl_opus-script_local.csv", "deploy_csv": "results/bowl_opus-script_deploy.csv",
+     "notes": "Opus writes policy.py once (results/policies/bowl_opus_v1.py) from the same prompt and API "
+              "docstrings as Astra; code unedited."},
+    {"policy": "astra-live-bowl", "family": "LLM closed-loop control", "model": "gpt-6-astra",
+     "task": "bin sorting into round bowls, UR5e (cream, grey, black)", "sim": "bowl", "local_box": local_box(),
+     "deploy_csv": "results/bowl_live_astra_deploy.csv",
+     "notes": "Astra in the loop (sim.agent_modes.run_live): each turn it sees the API history and replies "
+              "with the next calls; the first 16 deploy placements of the script sweeps, paired."},
+    {"policy": "fable-live-bowl", "family": "LLM closed-loop control", "model": "claude-fable-5-2",
+     "task": "bin sorting into round bowls, UR5e (cream, grey, black)", "sim": "bowl", "local_box": local_box(),
+     "deploy_csv": "results/bowl_live_fable_deploy.csv",
+     "notes": "Fable 5.2 in the loop, same harness and caps as astra-live-bowl, same 16 placements."},
     {"policy": "fable-live", "family": "LLM closed-loop control", "model": "claude-fable-5-2",
      "task": DITTO_TASK, "sim": "ditto", "local_box": DITTO_LOCAL_BOX,
      "local_csv": "results/ditto_fable_live_cmp_smoke.csv",

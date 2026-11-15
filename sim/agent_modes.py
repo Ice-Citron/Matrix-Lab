@@ -23,13 +23,15 @@ import time
 
 from sim.mj_sim import MAX_API_CALLS, ApiCapReached, CollisionStop
 from sim.mj_trial import _WallTimeout
-from sim.write_policy import MODEL, SORT_TASK, TASK, ask_astra, ask_opus
+from sim.write_policy import BOWL_TASK, MODEL, SORT_TASK, TASK, ask_astra, ask_opus
 
 MAX_TURNS = 40
 CALLS_PER_TURN = 10
 MAX_REWRITES = 3
 PERCEPTION = {"sort": [("cube_pose", []), ("bin_pose", ["red"]), ("bin_pose", ["green"]),
                        ("bin_pose", ["blue"])],
+              "bowl": [("cube_pose", []), ("bowl_pose", ["cream"]), ("bowl_pose", ["grey"]),
+                       ("bowl_pose", ["black"])],
               "peg": [("hole_pose", [])]}
 
 LIVE_RULES = """You control the arm live, one turn at a time. `api` is the module below; you may call only these
@@ -75,8 +77,9 @@ REPAIR = "Your last reply could not be used: {error}\nReply again in the require
 
 
 def task_of(api) -> str:
-    """'sort' for sim.sort_api, 'peg' for sim.api."""
-    return "sort" if api.__name__.endswith("sort_api") else "peg"
+    """'sort' for sim.sort_api, 'bowl' for sim.bowl_api, 'peg' for sim.api."""
+    name = api.__name__
+    return "sort" if name.endswith("sort_api") else "bowl" if name.endswith("bowl_api") else "peg"
 
 
 def new_log(mode: str) -> dict:
@@ -86,7 +89,7 @@ def new_log(mode: str) -> dict:
 
 def _scene(task: str) -> str:
     """The task text up to the mode-specific instructions: the cell description and success rule."""
-    template = SORT_TASK if task == "sort" else TASK
+    template = {"sort": SORT_TASK, "bowl": BOWL_TASK}.get(task, TASK)
     return template.split("\n\nWrite a Python module", 1)[0]
 
 
