@@ -3,8 +3,8 @@ title: Matrix Lab Compare
 emoji: 📊
 colorFrom: gray
 colorTo: blue
-sdk: streamlit
-sdk_version: 1.66.0
+sdk: docker
+app_port: 7860
 app_file: app.py
 pinned: false
 ---
