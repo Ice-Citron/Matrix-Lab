@@ -18,12 +18,12 @@ Today it supports two tasks, peg-in-hole and ball grasping, and evaluates four p
 
 ![UR5e peg-in-hole: success at the nominal placement (left), miss outside the benchmark (right)](https://huggingface.co/datasets/Matrix-Lab/Matrix-Lab-Preliminary-Experiments/resolve/main/docs/robot.gif)
 
-[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](https://huggingface.co/datasets/Matrix-Lab/Matrix-Lab-Preliminary-Experiments/resolve/main/docs/flow.png)]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html))
+[![Astra-written vs Opus-written policy: success rate over the deployment workspace, dashed box = benchmark](https://huggingface.co/datasets/Matrix-Lab/Matrix-Lab-Preliminary-Experiments/resolve/main/docs/flow.png)](https://ice-citron.github.io/Matrix-Lab/flow.html)
 
 
 ## Getting started
 
-**To look around:** open the [demo]([https://ice-citron.github.io/gaphunter/flow.html](https://ice-citron.github.io/Matrix-Lab/flow.html)). It replays the
+**To look around:** open the [demo](https://ice-citron.github.io/Matrix-Lab/flow.html). It replays the
 committed runs in this repository; nothing to install.
 
 **To run it yourself** (Linux, Python 3.12; no API key needed for the peg-in-hole task, because the policies
